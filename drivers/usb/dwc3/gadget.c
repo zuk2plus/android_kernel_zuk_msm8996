@@ -295,7 +295,13 @@ void dwc3_gadget_giveback(struct dwc3_ep *dep, struct dwc3_request *req,
 
 	dbg_done(dep->number, req->request.actual, req->request.status);
 	spin_unlock(&dwc->lock);
-	usb_gadget_giveback_request(&dep->endpoint, &req->request);
+
+	/* EP possibly disabled during giveback? */
+	smp_wmb();
+	if (dep->flags & DWC3_EP_ENABLED) {
+		usb_gadget_giveback_request(&dep->endpoint, &req->request);
+	}
+
 	spin_lock(&dwc->lock);
 }
 
@@ -648,6 +654,8 @@ static int __dwc3_gadget_ep_disable(struct dwc3_ep *dep)
 	dep->comp_desc = NULL;
 	dep->type = 0;
 	dep->flags = 0;
+
+	printk("====ep:%s is disabled in %s:%d====\n",dep->name,__func__,__LINE__);
 
 	return 0;
 }
@@ -1416,17 +1424,6 @@ static int dwc3_gadget_ep_queue(struct usb_ep *ep, struct usb_request *request,
 				request, ep->name);
 		spin_unlock_irqrestore(&dwc->lock, flags);
 		return -ESHUTDOWN;
-	}
-
-	/*
-	 * Queuing endless request to USB endpoint through generic ep queue
-	 * API should not be allowed.
-	 */
-	if (dep->endpoint.endless) {
-		dev_dbg(dwc->dev, "trying to queue endless request %p to %s\n",
-				request, ep->name);
-		spin_unlock_irqrestore(&dwc->lock, flags);
-		return -EPERM;
 	}
 
 	if (dwc3_gadget_is_suspended(dwc)) {

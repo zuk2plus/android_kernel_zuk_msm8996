@@ -410,7 +410,6 @@
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
 	qcom,partial-update-enabled;
 	qcom,panel-roi-alignment = <720 128 720 64 720 64>;
-	qcom,panel-allow-phy-poweroff;
 };
 
 &dsi_nt35950_4k_dsc_cmd {
@@ -439,7 +438,6 @@
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
-	qcom,panel-allow-phy-poweroff;
 };
 
 &dsi_dual_sharp_1080_120hz_cmd {
@@ -722,7 +720,7 @@
 
 &pmi8994_pwm_4 {
 	qcom,channel-owner = "lcd_bl";
-	qcom,dtest-line = <4>;
+	qcom,lpg-dtest-line = <4>;
 	qcom,dtest-output = <1>;
 	status = "okay";
 };
@@ -787,6 +785,7 @@
 	};
 };
 
+/*
 &spi_0 {
 	ethernet@2 {
 		compatible = "micrel,ks8851";
@@ -798,6 +797,7 @@
 		reset-gpios = <&tlmm 79 0>;
 	};
 };
+*/
 
 &wil6210 {
 	status = "ok";

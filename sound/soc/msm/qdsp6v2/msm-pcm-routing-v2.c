@@ -530,8 +530,8 @@ void msm_pcm_routing_reg_stream_app_type_cfg(int fedai_id, int app_type,
 	pr_debug("%s: fedai_id %d, app_type %d, sample_rate %d\n",
 		__func__, fedai_id, app_type, sample_rate);
 	if (fedai_id > MSM_FRONTEND_DAI_MM_MAX_ID) {
-		pr_err("%s: Invalid machine driver ID %d\n",
-			__func__, fedai_id);
+		/* bad ID assigned in machine driver */
+		pr_err("%s: bad MM ID %d\n", __func__, fedai_id);
 		return;
 	}
 	fe_dai_app_type_cfg[fedai_id].app_type = app_type;
@@ -539,51 +539,6 @@ void msm_pcm_routing_reg_stream_app_type_cfg(int fedai_id, int app_type,
 	fe_dai_app_type_cfg[fedai_id].sample_rate = sample_rate;
 }
 
-/**
- * msm_pcm_routing_get_stream_app_type_cfg
- *
- * Receives fedai_id and populates app_type, acdb_dev_id, &
- * sample rate. Returns 0 on success. On failure returns
- * -EINVAL and does not alter passed values.
- *
- * fedai_id - Passed value, front end ID for which app type config is wanted
- * app_type - Returned value, app type used by app type config
- * acdb_dev_id - Returned value, ACDB device ID used by app type config
- * sample_rate - Returned value, sample rate used by app type config
- */
-int msm_pcm_routing_get_stream_app_type_cfg(int fedai_id, int *app_type,
-					    int *acdb_dev_id, int *sample_rate)
-{
-	int ret = 0;
-
-	if (app_type == NULL) {
-		pr_err("%s: NULL pointer sent for app_type\n", __func__);
-		ret = -EINVAL;
-		goto done;
-	} else if (acdb_dev_id == NULL) {
-		pr_err("%s: NULL pointer sent for acdb_dev_id\n", __func__);
-		ret = -EINVAL;
-		goto done;
-	} else if (sample_rate == NULL) {
-		pr_err("%s: NULL pointer sent for sample rate\n", __func__);
-		ret = -EINVAL;
-		goto done;
-	} else if (fedai_id > MSM_FRONTEND_DAI_MM_MAX_ID) {
-		pr_err("%s: Invalid FE ID %d\n",
-			__func__, fedai_id);
-		ret = -EINVAL;
-		goto done;
-	}
-	*app_type = fe_dai_app_type_cfg[fedai_id].app_type;
-	*acdb_dev_id = fe_dai_app_type_cfg[fedai_id].acdb_dev_id;
-	*sample_rate = fe_dai_app_type_cfg[fedai_id].sample_rate;
-
-	pr_debug("%s: fedai_id %d, app_type %d, acdb_dev_id %d, sample_rate %d\n",
-		__func__, fedai_id, *app_type, *acdb_dev_id, *sample_rate);
-done:
-	return ret;
-}
-EXPORT_SYMBOL(msm_pcm_routing_get_stream_app_type_cfg);
 
 static struct cal_block_data *msm_routing_find_topology_by_path(int path)
 {
@@ -1937,7 +1892,6 @@ static const struct snd_kcontrol_new ext_ec_ref_mux_ul9 =
 	SOC_DAPM_ENUM_EXT("AUDIO_REF_EC_UL9 MUX Mux",
 		msm_route_ec_ref_rx_enum[0],
 		msm_routing_ec_ref_rx_get, msm_routing_ec_ref_rx_put);
-
 static int msm_routing_ext_ec_get(struct snd_kcontrol *kcontrol,
 				  struct snd_ctl_elem_value *ucontrol)
 {
@@ -1952,12 +1906,13 @@ static int msm_routing_ext_ec_get(struct snd_kcontrol *kcontrol,
 static int msm_routing_ext_ec_put(struct snd_kcontrol *kcontrol,
 				  struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_dapm_widget_list *wlist =
-					dapm_kcontrol_get_wlist(kcontrol);
+       struct snd_soc_dapm_widget_list *wlist =
+                                       dapm_kcontrol_get_wlist(kcontrol);
 	struct snd_soc_dapm_widget *widget = wlist->widgets[0];
 	int mux = ucontrol->value.enumerated.item[0];
 	struct soc_enum *e = (struct soc_enum *)kcontrol->private_value;
 	int ret = 0;
+	uint16_t ext_ec_ref_port_id;
 	bool state = false;
 	struct snd_soc_dapm_update *update = NULL;
 
@@ -1967,31 +1922,37 @@ static int msm_routing_ext_ec_put(struct snd_kcontrol *kcontrol,
 
 	mutex_lock(&routing_lock);
 	switch (ucontrol->value.integer.value[0]) {
+
 	case EC_PORT_ID_PRIMARY_MI2S_TX:
-		msm_route_ext_ec_ref = AFE_PORT_ID_PRIMARY_MI2S_TX;
+		ext_ec_ref_port_id = AFE_PORT_ID_PRIMARY_MI2S_TX;
+		msm_route_ext_ec_ref = 1;
 		state = true;
 		break;
 	case EC_PORT_ID_SECONDARY_MI2S_TX:
-		msm_route_ext_ec_ref = AFE_PORT_ID_SECONDARY_MI2S_TX;
+		ext_ec_ref_port_id = AFE_PORT_ID_SECONDARY_MI2S_TX;
+		msm_route_ext_ec_ref = 2;
 		state = true;
 		break;
 	case EC_PORT_ID_TERTIARY_MI2S_TX:
-		msm_route_ext_ec_ref = AFE_PORT_ID_TERTIARY_MI2S_TX;
+		ext_ec_ref_port_id = AFE_PORT_ID_TERTIARY_MI2S_TX;
+		msm_route_ext_ec_ref = 3;
 		state = true;
 		break;
 	case EC_PORT_ID_QUATERNARY_MI2S_TX:
-		msm_route_ext_ec_ref = AFE_PORT_ID_QUATERNARY_MI2S_TX;
+		ext_ec_ref_port_id = AFE_PORT_ID_QUATERNARY_MI2S_TX;
+		msm_route_ext_ec_ref = 4;
 		state = true;
 		break;
 	case EC_PORT_ID_SLIMBUS_1_TX:
-		msm_route_ext_ec_ref = SLIMBUS_1_TX;
+		ext_ec_ref_port_id = SLIMBUS_1_TX;
+		msm_route_ext_ec_ref = 5;
 		state = true;
-		break;
 	default:
-		msm_route_ext_ec_ref = AFE_PORT_INVALID;
+		ext_ec_ref_port_id = AFE_PORT_INVALID;
+		msm_route_ext_ec_ref = 0;
 		break;
 	}
-	if (!voc_set_ext_ec_ref(msm_route_ext_ec_ref, state)) {
+	if (!voc_set_ext_ec_ref(ext_ec_ref_port_id, state)) {
 		mutex_unlock(&routing_lock);
 		snd_soc_dapm_mux_update_power(widget->dapm, kcontrol, mux, e, update);
 	} else {

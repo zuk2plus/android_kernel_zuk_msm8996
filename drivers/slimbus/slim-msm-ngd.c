@@ -26,6 +26,7 @@
 #include <linux/of_slimbus.h>
 #include <linux/timer.h>
 #include <linux/msm-sps.h>
+#include <linux/reboot.h>
 #include "slim-msm.h"
 
 #define NGD_SLIM_NAME	"ngd_msm_ctrl"
@@ -708,6 +709,7 @@ static int ngd_bulk_wr(struct slim_controller *ctrl, u8 la, u8 mt, u8 mc,
 	struct msm_slim_ctrl *dev = slim_get_ctrldata(ctrl);
 	int i, ret;
 	struct msm_slim_endp *endpoint = &dev->tx_msgq;
+	struct sps_pipe *pipe = endpoint->sps;
 	u32 *header;
 	DECLARE_COMPLETION_ONSTACK(done);
 
@@ -809,8 +811,8 @@ static int ngd_bulk_wr(struct slim_controller *ctrl, u8 la, u8 mt, u8 mc,
 		goto retpath;
 	}
 
-	ret = sps_transfer_one(endpoint->sps, dev->bulk.wr_dma, dev->bulk.size,
-						NULL, SPS_IOVEC_FLAG_EOT);
+	ret = sps_transfer_one(pipe, dev->bulk.wr_dma, dev->bulk.size, NULL,
+				SPS_IOVEC_FLAG_EOT);
 	if (ret) {
 		SLIM_WARN(dev, "sps transfer one returned error:%d", ret);
 		goto retpath;
@@ -1270,9 +1272,10 @@ static int ngd_slim_power_up(struct msm_slim_ctrl *dev, bool mdm_restart)
 	/* reconnect BAM pipes if needed and enable NGD */
 	ngd_slim_setup(dev);
 
-	timeout = wait_for_completion_timeout(&dev->reconf, HZ);
+	timeout = wait_for_completion_timeout(&dev->reconf, 3 * HZ);
 	if (!timeout) {
-		SLIM_WARN(dev, "capability exchange timed-out\n");
+		printk("capability exchange timed-out, Now to machine_restart!!!\n");
+		machine_restart("slim_power_up");
 		return -ETIMEDOUT;
 	}
 	/* mutliple transactions waiting on slimbus to power up? */

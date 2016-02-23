@@ -415,6 +415,7 @@ static void android_work(struct work_struct *data)
 	}
 	dev->sw_connected = dev->connected;
 	dev->sw_suspended = dev->suspended;
+
 	spin_unlock_irqrestore(&cdev->lock, flags);
 
 	if (pdata->pm_qos_latency[0] && pm_qos_vote == 1) {
@@ -908,6 +909,7 @@ static int rmnet_function_bind_config(struct android_usb_function *f,
 	static int rmnet_initialized, ports;
 
 	if (!rmnet_initialized) {
+		rmnet_initialized = 1;
 		strlcpy(buf, rmnet_transports, sizeof(buf));
 		b = strim(buf);
 
@@ -936,11 +938,8 @@ static int rmnet_function_bind_config(struct android_usb_function *f,
 		err = rmnet_gport_setup();
 		if (err) {
 			pr_err("rmnet: Cannot setup transports");
-			frmnet_deinit_port();
-			ports = 0;
 			goto out;
 		}
-		rmnet_initialized = 1;
 	}
 
 	for (i = 0; i < ports; i++) {
@@ -1869,19 +1868,6 @@ static int serial_function_bind_config(struct android_usb_function *f,
 			}
 		}
 	}
-	/*
-	 * Make sure we always have two serials ports initialized to allow
-	 * switching composition from 1 serial function to 2 serial functions.
-	 * Mark 2nd port to use tty if user didn't specify transport.
-	 */
-	if ((config->instances_on == 1) && !serial_initialized) {
-		err = gserial_init_port(ports, "tty", "serial_tty");
-		if (err) {
-			pr_err("serial: Cannot open port '%s'", "tty");
-			goto out;
-		}
-		config->instances_on++;
-	}
 
 	/* limit the serial ports init only for boot ports */
 	if (ports > config->instances_on)
@@ -1896,7 +1882,8 @@ static int serial_function_bind_config(struct android_usb_function *f,
 		goto out;
 	}
 
-	for (i = 0; i < config->instances_on; i++) {
+	config->instances_on = ports;
+	for (i = 0; i < ports; i++) {
 		config->f_serial_inst[i] = usb_get_function_instance("gser");
 		if (IS_ERR(config->f_serial_inst[i])) {
 			err = PTR_ERR(config->f_serial_inst[i]);
@@ -2023,10 +2010,27 @@ ptp_function_bind_config(struct android_usb_function *f,
 	return mtp_bind_config(c, true);
 }
 
+struct android_configuration * _android_conf = NULL;
 static int mtp_function_ctrlrequest(struct android_usb_function *f,
 					struct usb_composite_dev *cdev,
 					const struct usb_ctrlrequest *c)
 {
+#ifdef SHENQI_MS_OS_DESCRIPTOR
+        struct android_usb_function_holder *f_count;
+        struct android_configuration *conf = _android_conf;
+        int        functions_no=0;
+        char   usb_function_string[32];
+        char  *buff = usb_function_string;
+
+        list_for_each_entry(f_count, &conf->enabled_functions, enabled_list)
+        {
+                functions_no++;
+                buff += sprintf(buff, "%s,", f_count->f->name);
+        }
+        *(buff-1) = '\n';
+
+        mtp_read_usb_functions(functions_no, usb_function_string);
+#endif
 	return mtp_ctrlrequest(cdev, c);
 }
 
@@ -2034,6 +2038,23 @@ static int ptp_function_ctrlrequest(struct android_usb_function *f,
 					struct usb_composite_dev *cdev,
 					const struct usb_ctrlrequest *c)
 {
+#ifdef SHENQI_MS_OS_DESCRIPTOR
+        struct android_usb_function_holder *f_count;
+        struct android_configuration *conf = _android_conf;
+        int        functions_no=0;
+        char   usb_function_string[32];
+        char  *buff = usb_function_string;
+
+        list_for_each_entry(f_count, &conf->enabled_functions, enabled_list)
+        {
+                functions_no++;
+                buff += sprintf(buff, "%s,", f_count->f->name);
+        }
+        *(buff-1) = '\n';
+
+        mtp_read_usb_functions(functions_no, usb_function_string);
+#endif
+
 	return mtp_ctrlrequest(cdev, c);
 }
 
@@ -2577,6 +2598,11 @@ static int mass_storage_function_init(struct android_usb_function *f,
 	}
 
 	fsg_mod_data.removable[0] = true;
+	fsg_mod_data.ro[0] = 1;
+	fsg_mod_data.cdrom[0] = 1;
+	fsg_mod_data.nofua[0] = 1;
+	fsg_mod_data.luns = 1;
+
 	fsg_config_from_params(&m_config, &fsg_mod_data, fsg_num_buffers);
 	fsg_opts = fsg_opts_from_func_inst(config->f_ms_inst);
 	ret = fsg_common_set_num_buffers(fsg_opts->common, fsg_num_buffers);
@@ -3422,6 +3448,8 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 			conf = alloc_android_config(dev);
 
 		curr_conf = curr_conf->next;
+		_android_conf = conf;
+
 		while (conf_str) {
 			name = strsep(&conf_str, ",");
 			is_ffs = 0;
@@ -3740,6 +3768,8 @@ static void android_unbind_config(struct usb_configuration *c)
 	android_unbind_enabled_functions(dev, c);
 }
 
+extern int is_testmode;
+
 static int android_bind(struct usb_composite_dev *cdev)
 {
 	struct android_dev *dev;
@@ -3786,6 +3816,8 @@ static int android_bind(struct usb_composite_dev *cdev)
 		return id;
 	strings_dev[STRING_SERIAL_IDX].id = id;
 	device_desc.iSerialNumber = id;
+	if(is_testmode == 1)
+		device_desc.iSerialNumber = 0;
 
 	dev->cdev = cdev;
 
@@ -3935,6 +3967,15 @@ static void android_resume(struct usb_gadget *gadget)
 	composite_resume_func(gadget);
 }
 
+static ssize_t usb_speed_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct android_dev *android_dev = dev_get_drvdata(dev);
+	struct usb_gadget *gadget = android_dev->cdev->gadget;
+	return snprintf(buf, PAGE_SIZE, usb_speed_string(gadget->speed));
+}
+static DEVICE_ATTR(iSpeed, S_IRUGO, usb_speed_show, NULL);
+
 static int android_create_device(struct android_dev *dev, u8 usb_core_id)
 {
 	struct device_attribute **attrs = android_usb_attributes;
@@ -3963,6 +4004,8 @@ static int android_create_device(struct android_dev *dev, u8 usb_core_id)
 			return err;
 		}
 	}
+	/* speed */
+	err = device_create_file(dev->dev, &dev_attr_iSpeed);
 	return 0;
 }
 
