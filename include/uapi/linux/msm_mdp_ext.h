@@ -76,6 +76,25 @@ LAYER FLAG CONFIGURATION
 #define MDP_LAYER_ENABLE_QSEED3_SCALE   0x800
 
 /**********************************************************************
+DESTINATION SCALER FLAG CONFIGURATION
+**********************************************************************/
+
+/* Enable/disable Destination scaler */
+#define MDP_DESTSCALER_ENABLE		0x1
+
+/*
+ * Indicating mdp_destination_scaler_data contains
+ * Scaling parameter update. Can be set anytime.
+ */
+#define MDP_DESTSCALER_SCALE_UPDATE	0x2
+
+/*
+ * Indicating mdp_destination_scaler_data contains
+ * Detail enhancement setting update. Can be set anytime.
+ */
+#define MDP_DESTSCALER_ENHANCER_UPDATE	0x4
+
+/**********************************************************************
 VALIDATE/COMMIT FLAG CONFIGURATION
 **********************************************************************/
 
@@ -297,6 +316,41 @@ struct mdp_output_layer {
 };
 
 /*
+ * Destination scaling info structure holds setup paramaters for upscaling
+ * setting in the destination scaling block.
+ */
+struct mdp_destination_scaler_data {
+	/*
+	 * Flag to switch between mode for destination scaler. Please Refer to
+	 * destination scaler flag config for all possible setting.
+	 */
+	uint32_t			flags;
+
+	/*
+	 * Destination scaler selection index. Client provides the index in
+	 * validate and commit call.
+	 */
+	uint32_t			dest_scaler_ndx;
+
+	/*
+	 * LM width configuration per Destination scaling updates
+	 */
+	uint32_t			lm_width;
+
+	/*
+	 * LM height configuration per Destination scaling updates
+	 */
+	uint32_t			lm_height;
+
+	/*
+	 * The scaling parameters for all the mode except disable. For
+	 * disabling the scaler, there is no need to provide the scale.
+	 * A userspace pointer points to struct mdp_scale_data_v2.
+	 */
+	uint64_t	__user scale;
+};
+
+/*
  * Commit structure holds layer stack send by client for validate and commit
  * call. If layers are different between validate and commit call then commit
  * call will also do validation. In such case, commit may fail.
@@ -361,6 +415,18 @@ struct mdp_layer_commit_v1 {
 	 * after that.
 	 */
 	int			retire_fence;
+
+	/*
+	 * Scaler data and control for setting up destination scaler.
+	 * A userspace pointer that points to a list of
+	 * struct mdp_destination_scaler_data.
+	 */
+	void __user		*dest_scaler;
+
+	/*
+	 * Represents number of Destination scaler data provied by userspace.
+	 */
+	uint32_t		dest_scaler_cnt;
 
 	/* 32-bits reserved value for future usage. */
 	uint32_t		reserved[6];
