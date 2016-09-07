@@ -1176,6 +1176,46 @@ static inline int mdss_mdp_get_display_id(struct mdss_mdp_pipe *pipe)
 	return (pipe && pipe->mfd) ? pipe->mfd->index : -1;
 }
 
+static inline bool mdss_mdp_is_full_frame_update(struct mdss_mdp_ctl *ctl)
+{
+	struct mdss_mdp_mixer *mixer;
+	struct mdss_rect *roi;
+
+	if (mdss_mdp_get_pu_type(ctl) != MDSS_MDP_DEFAULT_UPDATE)
+		return false;
+
+	if (ctl->mixer_left->valid_roi) {
+		mixer = ctl->mixer_left;
+		roi = &mixer->roi;
+		if ((roi->x != 0) || (roi->y != 0) || (roi->w != mixer->width)
+			|| (roi->h != mixer->height))
+			return false;
+	}
+
+	if (ctl->mixer_right && ctl->mixer_right->valid_roi) {
+		mixer = ctl->mixer_right;
+		roi = &mixer->roi;
+		if ((roi->x != 0) || (roi->y != 0) || (roi->w != mixer->width)
+			|| (roi->h != mixer->height))
+			return false;
+	}
+
+	return true;
+}
+
+static inline bool mdss_mdp_is_lineptr_supported(struct mdss_mdp_ctl *ctl)
+{
+	struct mdss_panel_info *pinfo;
+
+	if (!ctl || !ctl->mixer_left || !ctl->is_master)
+		return false;
+
+	pinfo = &ctl->panel_data->panel_info;
+
+	return (ctl->is_video_mode || ((pinfo->type == MIPI_CMD_PANEL)
+			&& (pinfo->te.tear_check_en)) ? true : false);
+}
+
 irqreturn_t mdss_mdp_isr(int irq, void *ptr);
 void mdss_mdp_irq_clear(struct mdss_data_type *mdata,
 		u32 intr_type, u32 intf_num);
@@ -1201,7 +1241,7 @@ int mdss_mdp_secure_display_ctrl(unsigned int enable);
 
 int mdss_mdp_overlay_init(struct msm_fb_data_type *mfd);
 int mdss_mdp_dfps_update_params(struct msm_fb_data_type *mfd,
-	struct mdss_panel_data *pdata, int dfps);
+	struct mdss_panel_data *pdata, struct dynamic_fps_data *data);
 int mdss_mdp_layer_atomic_validate(struct msm_fb_data_type *mfd,
 	struct file *file, struct mdp_layer_commit_v1 *ov_commit);
 int mdss_mdp_layer_pre_commit(struct msm_fb_data_type *mfd,
@@ -1317,6 +1357,7 @@ int mdss_mdp_mixer_pipe_update(struct mdss_mdp_pipe *pipe,
 int mdss_mdp_mixer_pipe_unstage(struct mdss_mdp_pipe *pipe,
 	struct mdss_mdp_mixer *mixer);
 void mdss_mdp_mixer_unstage_all(struct mdss_mdp_mixer *mixer);
+void mdss_mdp_reset_mixercfg(struct mdss_mdp_ctl *ctl);
 int mdss_mdp_display_commit(struct mdss_mdp_ctl *ctl, void *arg,
 	struct mdss_mdp_commit_cb *commit_cb);
 int mdss_mdp_display_wait4comp(struct mdss_mdp_ctl *ctl);
@@ -1514,6 +1555,10 @@ void mdss_mdp_wb_free(struct mdss_mdp_writeback *wb);
 
 void mdss_mdp_ctl_dsc_setup(struct mdss_mdp_ctl *ctl,
 	struct mdss_panel_info *pinfo);
+
+void mdss_mdp_video_isr(void *ptr, u32 count);
+void mdss_mdp_enable_hw_irq(struct mdss_data_type *mdata);
+void mdss_mdp_disable_hw_irq(struct mdss_data_type *mdata);
 
 #ifdef CONFIG_FB_MSM_MDP_NONE
 struct mdss_data_type *mdss_mdp_get_mdata(void)
