@@ -1,45 +1,24 @@
-/*
- * Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials provided
- *       with the distribution.
- *     * Neither the name of The Linux Foundation nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
  *
- * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
- * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
- * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
- * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
-
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/init.h>
 #include <linux/notifier.h>
 #include <linux/cpu.h>
-#include <linux/moduleparam.h>
 #include <linux/cpumask.h>
 #include <linux/cpufreq.h>
 #include <linux/timer.h>
 #include <linux/kthread.h>
-#include <linux/module.h>
 #include <linux/sched.h>
-#include <soc/qcom/core_ctl.h>
+#include <linux/sched/rt.h>
 #include <linux/mutex.h>
 
 #include <trace/events/power.h>
@@ -200,6 +179,7 @@ static ssize_t store_busy_up_thres(struct cpu_data *state,
 static ssize_t show_busy_up_thres(struct cpu_data *state, char *buf)
 {
 	int i, count = 0;
+
 	for (i = 0; i < state->num_cpus; i++)
 		count += snprintf(buf + count, PAGE_SIZE - count, "%u ",
 				  state->busy_up_thres[i]);
@@ -231,6 +211,7 @@ static ssize_t store_busy_down_thres(struct cpu_data *state,
 static ssize_t show_busy_down_thres(struct cpu_data *state, char *buf)
 {
 	int i, count = 0;
+
 	for (i = 0; i < state->num_cpus; i++)
 		count += snprintf(buf + count, PAGE_SIZE - count, "%u ",
 				  state->busy_down_thres[i]);
@@ -307,7 +288,7 @@ static ssize_t show_global_state(struct cpu_data *state, char *buf)
 					"\tIs busy: %u\n", c->is_busy);
 		if (c->cpu != c->first_cpu)
 			continue;
-		count += snprintf(buf + count, PAGE_SIZE- count,
+		count += snprintf(buf + count, PAGE_SIZE - count,
 					"\tNr running: %u\n", c->nrrun);
 		count += snprintf(buf + count, PAGE_SIZE - count,
 					"\tAvail CPUs: %u\n", c->avail_cpus);
@@ -319,7 +300,7 @@ static ssize_t show_global_state(struct cpu_data *state, char *buf)
 }
 
 static ssize_t store_not_preferred(struct cpu_data *state,
-							const char *buf, size_t count)
+						const char *buf, size_t count)
 {
 	struct cpu_data *c;
 	unsigned int i, first_cpu;
@@ -445,7 +426,6 @@ static struct kobj_type ktype_core_ctl = {
 #define RQ_AVG_DEFAULT_MS 20
 #define NR_RUNNING_TOLERANCE 5
 static unsigned int rq_avg_period_ms = RQ_AVG_DEFAULT_MS;
-module_param(rq_avg_period_ms, uint, 0644);
 
 static s64 rq_avg_timestamp_ms;
 static struct timer_list rq_avg_timer;
@@ -460,7 +440,7 @@ static void update_running_avg(bool trigger_update)
 
 	spin_lock_irqsave(&state_lock, flags);
 
-	now = core_ctl_get_time();
+	now = ktime_to_ms(ktime_get());
 	if (now - rq_avg_timestamp_ms < rq_avg_period_ms - RQ_AVG_TOLERANCE) {
 		spin_unlock_irqrestore(&state_lock, flags);
 		return;
@@ -570,7 +550,7 @@ static bool eval_need(struct cpu_data *f)
 	need_flag = apply_limits(f, need_cpus) != apply_limits(f, f->need_cpus);
 	last_need = f->need_cpus;
 
-	now = core_ctl_get_time();
+	now = ktime_to_ms(ktime_get());
 
 	if (need_cpus == last_need) {
 		f->need_ts = now;
@@ -582,6 +562,7 @@ static bool eval_need(struct cpu_data *f)
 		ret = 1;
 	} else if (need_cpus < last_need) {
 		s64 elapsed = now - f->need_ts;
+
 		if (elapsed >= f->offline_delay_ms) {
 			ret = 1;
 		} else {
@@ -595,7 +576,8 @@ static bool eval_need(struct cpu_data *f)
 		f->need_cpus = need_cpus;
 	}
 
-	trace_core_ctl_eval_need(f->cpu, last_need, need_cpus, ret && need_flag);
+	trace_core_ctl_eval_need(f->cpu, last_need, need_cpus,
+				 ret && need_flag);
 	spin_unlock_irqrestore(&state_lock, flags);
 
 	return ret && need_flag;
@@ -679,6 +661,40 @@ static void core_ctl_timer_func(unsigned long cpu)
 
 }
 
+static int core_ctl_online_core(unsigned int cpu)
+{
+	int ret;
+	struct device *dev;
+
+	lock_device_hotplug();
+	dev = get_cpu_device(cpu);
+	if (!dev) {
+		pr_err("%s: failed to get cpu%d device\n", __func__, cpu);
+		ret = -ENODEV;
+	} else {
+		ret = device_online(dev);
+	}
+	unlock_device_hotplug();
+	return ret;
+}
+
+static int core_ctl_offline_core(unsigned int cpu)
+{
+	int ret;
+	struct device *dev;
+
+	lock_device_hotplug();
+	dev = get_cpu_device(cpu);
+	if (!dev) {
+		pr_err("%s: failed to get cpu%d device\n", __func__, cpu);
+		ret = -ENODEV;
+	} else {
+		ret = device_offline(dev);
+	}
+	unlock_device_hotplug();
+	return ret;
+}
+
 static void update_lru(struct cpu_data *f)
 {
 	struct cpu_data *c, *tmp;
@@ -719,7 +735,7 @@ static void __ref do_hotplug(struct cpu_data *f)
 				continue;
 
 			pr_debug("Trying to Offline CPU%u\n", c->cpu);
-			if (cpu_down(c->cpu))
+			if (core_ctl_offline_core(c->cpu))
 				pr_debug("Unable to Offline CPU%u\n", c->cpu);
 		}
 
@@ -738,7 +754,7 @@ static void __ref do_hotplug(struct cpu_data *f)
 				break;
 
 			pr_debug("Trying to Offline CPU%u\n", c->cpu);
-			if (cpu_down(c->cpu))
+			if (core_ctl_offline_core(c->cpu))
 				pr_debug("Unable to Offline CPU%u\n", c->cpu);
 		}
 	} else if (f->online_cpus < need) {
@@ -931,7 +947,6 @@ static struct notifier_block __refdata cpu_notifier = {
 
 /* ============================ init code ============================== */
 
-#define HOTPLUG_THREAD_NICE_VAL -7
 static int group_init(struct cpumask *mask)
 {
 	struct device *dev;
@@ -939,11 +954,12 @@ static int group_init(struct cpumask *mask)
 	struct cpu_data *f = &per_cpu(cpu_state, first_cpu);
 	struct cpu_data *state;
 	unsigned int cpu;
+	struct sched_param param = { .sched_priority = MAX_RT_PRIO-1 };
 
 	if (likely(f->inited))
 		return 0;
 
-	dev = core_ctl_find_cpu_device(first_cpu);
+	dev = get_cpu_device(first_cpu);
 	if (!dev)
 		return -ENODEV;
 
@@ -986,7 +1002,9 @@ static int group_init(struct cpumask *mask)
 
 	f->hotplug_thread = kthread_run(try_hotplug, (void *) f,
 					"core_ctl/%d", first_cpu);
-	set_user_nice(f->hotplug_thread, HOTPLUG_THREAD_NICE_VAL);
+	if (IS_ERR(f->hotplug_thread))
+		return PTR_ERR(f->hotplug_thread);
+	sched_setscheduler_nocheck(f->hotplug_thread, SCHED_FIFO, &param);
 
 	for_each_cpu(cpu, mask) {
 		state = &per_cpu(cpu_state, cpu);
@@ -1044,43 +1062,17 @@ static int __init core_ctl_init(void)
 	init_timer_deferrable(&rq_avg_timer);
 	rq_avg_timer.function = rq_avg_timer_func;
 
-	core_ctl_block_hotplug();
+	get_online_cpus();
 	for_each_online_cpu(cpu) {
-		policy = core_ctl_get_policy(cpu);
+		policy = cpufreq_cpu_get(cpu);
 		if (policy) {
 			group_init(policy->related_cpus);
-			core_ctl_put_policy(policy);
+			cpufreq_cpu_put(policy);
 		}
 	}
-	core_ctl_unblock_hotplug();
+	put_online_cpus();
 	mod_timer(&rq_avg_timer, round_to_nw_start());
 	return 0;
 }
 
-static void __exit core_ctl_exit(void)
-{
-	int cpu;
-	struct cpu_data *pcpu;
-
-	unregister_cpu_notifier(&cpu_notifier);
-	cpufreq_unregister_notifier(&cpufreq_pol_nb, CPUFREQ_POLICY_NOTIFIER);
-	cpufreq_unregister_notifier(&cpufreq_gov_nb, CPUFREQ_GOVINFO_NOTIFIER);
-	del_timer_sync(&rq_avg_timer);
-
-	for_each_possible_cpu(cpu) {
-		pcpu = &per_cpu(cpu_state, cpu);
-		if (pcpu->inited && cpu == pcpu->first_cpu) {
-			pcpu->inited = false;
-			del_timer_sync(&pcpu->timer);
-			kthread_stop(pcpu->hotplug_thread);
-			kobject_put(&pcpu->kobj);
-		}
-		pcpu->inited = false;
-	}
-}
-
-module_init(core_ctl_init);
-module_exit(core_ctl_exit);
-
-MODULE_DESCRIPTION("MSM Core Control Driver");
-MODULE_LICENSE("GPL v2");
+late_initcall(core_ctl_init);
