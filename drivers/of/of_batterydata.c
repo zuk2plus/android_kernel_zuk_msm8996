@@ -20,7 +20,9 @@
 #include <linux/batterydata-lib.h>
 #include <linux/power_supply.h>
 
+#ifdef CONFIG_PRODUCT_Z2_PLUS
 #define SUPPORT_LENUK_BATTERY_ID_ALGO
+#endif
 
 static int of_batterydata_read_lut(const struct device_node *np,
 			int max_cols, int max_rows, int *ncols, int *nrows,
@@ -412,6 +414,9 @@ struct device_node *of_batterydata_get_best_profile(
 	pr_info("profile id %d batt id %d",
 		best_id_kohm, batt_id_kohm);
 #else
+	pr_info("profile id %d batt id %d",
+		best_id_kohm, batt_id_kohm);
+
 	/* check that profile id is in range of the measured batt_id */
 	if (abs(best_id_kohm - batt_id_kohm) >
 			((best_id_kohm * id_range_pct) / 100)) {
@@ -487,6 +492,9 @@ int of_batterydata_read_data(struct device_node *batterydata_container_node,
 	pr_info("profile id %d batt id %d",
 		best_id_kohm, batt_id_kohm);
 #endif
+	pr_info("profile id %d batt id %d",
+		best_id_kohm, batt_id_kohm);
+
 	if (best_node == NULL) {
 		pr_err("No battery data found\n");
 		return -ENODATA;

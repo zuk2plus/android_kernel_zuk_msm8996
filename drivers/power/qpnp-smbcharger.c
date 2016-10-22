@@ -54,6 +54,11 @@
 #ifdef CONFIG_PRODUCT_Z2_PLUS
 #define SUPPORT_ONLY_5V_CHARGER
 #endif
+#if defined CONFIG_PRODUCT_Z2_PLUS || defined CONFIG_PRODUCT_Z2_X
+#define SUPPORT_LENUK_WIRE_CHARGER
+#endif
+#define SUPPORT_LENUK_BOOTUP_ICL
+//#define SUPPORT_QPNP_NOISE_LOG
 
 #ifdef SUPPORT_CALL_POWER_OP
 extern int g_call_status;
@@ -147,6 +152,10 @@ struct smbchg_chip {
 	int				cool_fv_comp;
 	struct work_struct		jeita_custom_work;
 	struct delayed_work		jeita_temp_monitor_work;
+#endif
+#ifdef SUPPORT_LENUK_BOOTUP_ICL
+	ktime_t 			boot_icl_kt;
+	struct delayed_work		bootup_monitor_work;
 #endif
 #ifdef SUPPORT_NON_STANDARD_CHARGER
 	struct delayed_work		ns_charger_monitor_work;
@@ -418,6 +427,9 @@ enum icl_voters {
 #ifdef SUPPORT_NON_STANDARD_CHARGER
 	NSC_ICL_VOTER,
 #endif
+#ifdef SUPPORT_LENUK_BOOTUP_ICL
+	BOOTUP_ICL_VOTER,
+#endif
 	NUM_ICL_VOTER,
 };
 
@@ -501,7 +513,11 @@ enum aicl_short_deglitch_voters {
 	HVDCP_SHORT_DEGLITCH_VOTER,
 	NUM_HW_SHORT_DEGLITCH_VOTERS,
 };
+#ifdef SUPPORT_QPNP_NOISE_LOG
 static int smbchg_debug_mask = 0xFF;
+#else
+static int smbchg_debug_mask = 0xFE;
+#endif
 module_param_named(
 	debug_mask, smbchg_debug_mask, int, S_IRUSR | S_IWUSR
 );
@@ -529,21 +545,13 @@ module_param_named(
 	int, S_IRUSR | S_IWUSR
 );
 
-#ifdef CONFIG_QPNP_SMBCHARGER_HW
 static int smbchg_default_hvdcp3_icl_ma = 1900;
-#else
-static int smbchg_default_hvdcp3_icl_ma = 3000;
-#endif
 module_param_named(
 	default_hvdcp3_icl_ma, smbchg_default_hvdcp3_icl_ma,
 	int, S_IRUSR | S_IWUSR
 );
 
-#ifdef CONFIG_QPNP_SMBCHARGER_HW
 static int smbchg_default_dcp_icl_ma = 2000;
-#else
-static int smbchg_default_dcp_icl_ma = 2500;
-#endif
 module_param_named(
 	default_dcp_icl_ma, smbchg_default_dcp_icl_ma,
 	int, S_IRUSR | S_IWUSR
@@ -938,7 +946,16 @@ static enum power_supply_property lenuk_battery_properties[] = {
 	POWER_SUPPLY_PROP_NS_CHARGER,
 	POWER_SUPPLY_PROP_CALLING,
 	POWER_SUPPLY_PROP_SCREEN_ON,
+	POWER_SUPPLY_PROP_SHIP_MODE,
 };
+
+#define CMD_CHG_SHIP_MODE_REG		0x40
+#define EN_BAT_SHIP_MODE_BIT		BIT(0)
+static int smbchg_ship_mode(struct smbchg_chip *chip)
+{
+	return smbchg_sec_masked_write(chip, chip->bat_if_base + CMD_CHG_SHIP_MODE_REG,
+			EN_BAT_SHIP_MODE_BIT, 0);
+}
 
 static int lenuk_battery_get_property(struct power_supply *psy,
 				       enum power_supply_property psp,
@@ -968,6 +985,9 @@ static int lenuk_battery_get_property(struct power_supply *psy,
 		val->intval = -1;
 #endif
 		break;
+	case POWER_SUPPLY_PROP_SHIP_MODE:
+		val->intval = 0;
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -976,9 +996,21 @@ static int lenuk_battery_get_property(struct power_supply *psy,
 }
 
 static int lenuk_battery_set_property(struct power_supply *psy,
-				  enum power_supply_property psp,
+				  enum power_supply_property prop,
 				  const union power_supply_propval *val)
 {
+	struct smbchg_chip *chip = container_of(psy, struct smbchg_chip, lenuk_batt_psy);
+
+	switch (prop) {
+	case POWER_SUPPLY_PROP_SHIP_MODE:
+		pr_smb(PR_STATUS, "Set battery to ship mode ...(%d)\n", val->intval);
+		if (val->intval)
+			smbchg_ship_mode(chip);
+		break;
+	default:
+		return -EINVAL;
+	}
+
 	return 0;
 };
 
@@ -988,9 +1020,20 @@ static void lenuk_external_power_changed(struct power_supply *psy)
 }
 
 static int lenuk_battery_property_is_writeable(struct power_supply *psy,
-						enum power_supply_property psp)
+						enum power_supply_property prop)
 {
-	return 0;
+	int rc;
+
+	switch (prop) {
+	case POWER_SUPPLY_PROP_SHIP_MODE:
+		rc = 1;
+		break;
+	default:
+		rc = 0;
+		break;
+	}
+
+	return rc;
 }
 #endif
 
@@ -3274,6 +3317,41 @@ static int smbchg_iterm_set(struct smbchg_chip *chip, int iterm_ma)
 	return 0;
 }
 
+#ifdef SUPPORT_LENUK_BOOTUP_ICL
+#define LENUK_BOOTUP_ICL_MA			500
+#define LENUK_BOOTUP_ICL_DELAY_MS		20000
+static void smbchg_bootup_monitor_work(struct work_struct *work)
+{
+	struct smbchg_chip *chip = container_of(work,
+				struct smbchg_chip,
+				bootup_monitor_work.work);
+
+	ktime_t now_kt, delta_kt;
+	int delta_ms, rc;
+
+	now_kt = ktime_get_boottime();
+	delta_kt = ktime_sub(now_kt, chip->boot_icl_kt);
+	delta_ms = (int)div64_s64(ktime_to_ns(delta_kt), 1000000);
+
+	if (delta_ms < LENUK_BOOTUP_ICL_DELAY_MS) {
+		rc = vote(chip->usb_icl_votable, BOOTUP_ICL_VOTER, true, LENUK_BOOTUP_ICL_MA);
+		if (rc < 0)
+			dev_err(chip->dev, "Couldn't vote icl ma to bootup rc=%d\n", rc);
+		else
+			pr_smb(PR_STATUS, "Vote bootup icl to %d\n", LENUK_BOOTUP_ICL_MA);
+
+		schedule_delayed_work(&chip->bootup_monitor_work,
+						msecs_to_jiffies(2000));
+	} else {
+		rc = vote(chip->usb_icl_votable, BOOTUP_ICL_VOTER, false, 0);
+		if (rc < 0)
+			dev_err(chip->dev, "Couldn't disable bootup icl voter rc=%d\n", rc);
+		else
+			pr_smb(PR_STATUS, "Disable bootup icl\n");
+	}
+}
+#endif
+
 #ifdef SUPPORT_NON_STANDARD_CHARGER
 #define NS_CHARGER_MONITOR_MS			2000
 #define NS_CHARGER_USBIN_CHECK_MS		5000
@@ -3294,20 +3372,13 @@ static void smbchg_request_ns_charger_monitor(struct smbchg_chip *chip)
 #define NSC_USBIN_UV		4760000
 #define HVDCP_DP_DM_UV		3200000
 
-#ifdef CONFIG_QPNP_SMBCHARGER_HW
 #define	NSC_MAX_CURRENT_LEVEL		4
-#else
-#define	NSC_MAX_CURRENT_LEVEL		5
-#endif
 
 static const int nsc_icl_table[] = {
 	500,
 	900,
 	1500,
 	2000,
-#ifndef CONFIG_QPNP_SMBCHARGER_HW
-	2500,
-#endif
 };
 
 static long long smbchg_get_avg_data(long long data[10])
@@ -5062,6 +5133,20 @@ static int smbchg_change_usb_supply_type(struct smbchg_chip *chip,
 		current_limit_ma = smbchg_default_hvdcp3_icl_ma;
 	else
 		current_limit_ma = smbchg_default_dcp_icl_ma;
+
+#ifdef SUPPORT_LENUK_WIRE_CHARGER
+#define LENUK_WIRE_CHARGER_ICL_MA		800
+	{
+		enum power_supply_type usb_supply_type;
+		char *usb_type_name = "null";
+		read_usb_type(chip, &usb_type_name, &usb_supply_type);
+
+		if ((type == POWER_SUPPLY_TYPE_USB_DCP) && (!memcmp(usb_type_name, "OTHER", 5))) {
+			pr_smb(PR_STATUS, "A lenuk wire charger: setting mA = %d\n", LENUK_WIRE_CHARGER_ICL_MA);
+			current_limit_ma = LENUK_WIRE_CHARGER_ICL_MA;
+		}
+	}
+#endif
 
 	pr_smb(PR_STATUS, "Type %d: setting mA = %d\n",
 		type, current_limit_ma);
@@ -8861,6 +8946,10 @@ static int smbchg_probe(struct spmi_device *spmi)
 #ifdef SUPPORT_QPNP_USBIN_MONITOR
 	chip->vadc_dev_usb = vadc_dev_usb;
 #endif
+#ifdef SUPPORT_LENUK_BOOTUP_ICL
+	INIT_DELAYED_WORK(&chip->bootup_monitor_work, smbchg_bootup_monitor_work);
+	chip->boot_icl_kt = ktime_get_boottime();
+#endif
 #ifdef SUPPORT_JEITA_TEMP_PATCH
 	INIT_WORK(&chip->jeita_custom_work, smbchg_jeita_custom_work);
 	INIT_DELAYED_WORK(&chip->jeita_temp_monitor_work, smbchg_jeita_temp_monitor_work);
@@ -9043,6 +9132,10 @@ static int smbchg_probe(struct spmi_device *spmi)
 	dump_regs(chip);
 	create_debugfs_entries(chip);
 
+#ifdef SUPPORT_LENUK_BOOTUP_ICL
+	schedule_delayed_work(&chip->bootup_monitor_work,
+					msecs_to_jiffies(10));
+#endif
 #ifdef SUPPORT_JEITA_TEMP_PATCH
 	schedule_delayed_work(&chip->jeita_temp_monitor_work,
 					msecs_to_jiffies(20000));

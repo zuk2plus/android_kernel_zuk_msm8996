@@ -203,15 +203,7 @@
 			#size-cells = <1>;
 
 			qcom,iterm-ma = <100>;
-#ifdef CONFIG_QPNP_SMBCHARGER_HW
 			qcom,fastchg-current-ma = <2000>;
-#else
-#ifdef CONFIG_PRODUCT_Z2_X
-			qcom,fastchg-current-ma = <1900>;
-#else
-			qcom,fastchg-current-ma = <2400>;
-#endif
-#endif
 			qcom,float-voltage-mv = <4400>;
 			qcom,resume-delta-mv = <200>;
 			qcom,chg-inhibit-fg;

@@ -64,6 +64,8 @@ static char otm1901a_ct_head10[] = {0xD7,0xA0};
 static char otm1901a_ct_head20[] = {0xFB,0x01};
 static char otm1901a_ct_tail00[] = {0xD7,0x00};
 static char otm1901a_ct_tail10[] = {0x26,0x01};
+static char otm1901a_ce_enable[] = {0x81,0x80};
+static char otm1901a_ce_disable[] = {0x81,0x00};
 
 /*
 static char otm1901a_ct5k5_0[] = {0xE1,0x00,0x05,0x0C,0x17,0x20,0x26,0x33,0x47,0x51,0x66,0x74,0x80,0x78,0x6F,0x69,0x59,0x45,0x34,0x29,0x22,0x19,0x0B,0x04,0x03};
@@ -141,6 +143,12 @@ char *otm1901a_ct_tail0[] = {
 char *otm1901a_ct_tail1[] = {
 	otm1901a_ct_tail10,
 };
+char *otm1901a_ce_switch[] = {
+	otm1901a_ce_enable,
+	otm1901a_ce_enable,
+	otm1901a_ce_enable,
+	otm1901a_ce_disable,
+};
 
 char *otm1901a_ct0[] = {
 	otm1901a_ct6k_0,
@@ -214,7 +222,10 @@ static struct dsi_cmd_desc otm1901a_effect_ct_tail0[] = {
 	{{DTYPE_GEN_LWRITE, 0, 0, 0, 0, sizeof(otm1901a_ct_tail00)}, otm1901a_ct_tail00},
 };
 static struct dsi_cmd_desc otm1901a_effect_ct_tail1[] = {
-	{{DTYPE_GEN_LWRITE, 1, 0, 0, 0, sizeof(otm1901a_ct_tail10)}, otm1901a_ct_tail10},
+	{{DTYPE_GEN_LWRITE, 0, 0, 0, 0, sizeof(otm1901a_ct_tail10)}, otm1901a_ct_tail10},
+};
+static struct dsi_cmd_desc otm1901a_effect_ce_switch[] = {
+	{{DTYPE_GEN_LWRITE, 1, 0, 0, 0, sizeof(otm1901a_ce_disable)}, otm1901a_ce_disable},
 };
 
 static struct dsi_cmd_desc otm1901a_effect_ct0[] = {
@@ -254,12 +265,15 @@ struct lcd_effect_cmds otm1901a_effect_ct_cmd[] = {
 	{{otm1901a_ct4, ARRAY_SIZE(otm1901a_ct4)}, {otm1901a_effect_ct4, ARRAY_SIZE(otm1901a_effect_ct4)}},
 	{{otm1901a_ct, ARRAY_SIZE(otm1901a_ct)}, {otm1901a_effect_ct, ARRAY_SIZE(otm1901a_effect_ct)}},
 	{{otm1901a_ct5, ARRAY_SIZE(otm1901a_ct5)}, {otm1901a_effect_ct5, ARRAY_SIZE(otm1901a_effect_ct5)}},
+	{{otm1901a_ct, ARRAY_SIZE(otm1901a_ct)}, {otm1901a_effect_ct, ARRAY_SIZE(otm1901a_effect_ct)}},
+	{{otm1901a_ce_switch, ARRAY_SIZE(otm1901a_ce_switch)}, {otm1901a_effect_ce_switch, ARRAY_SIZE(otm1901a_effect_ce_switch)}},
 
 	{{otm1901a_ct_head0, ARRAY_SIZE(otm1901a_ct_head0)}, {otm1901a_effect_ct_head0, ARRAY_SIZE(otm1901a_effect_ct_head0)}},
 	{{otm1901a_ct_tail0, ARRAY_SIZE(otm1901a_ct_tail0)}, {otm1901a_effect_ct_tail0, ARRAY_SIZE(otm1901a_effect_ct_tail0)}},
 	{{otm1901a_ct, ARRAY_SIZE(otm1901a_ct)}, {otm1901a_effect_ct, ARRAY_SIZE(otm1901a_effect_ct)}},
 	{{otm1901a_ct_head2, ARRAY_SIZE(otm1901a_ct_head2)}, {otm1901a_effect_ct_head2, ARRAY_SIZE(otm1901a_effect_ct_head2)}},
 	{{otm1901a_ct_tail1, ARRAY_SIZE(otm1901a_ct_tail1)}, {otm1901a_effect_ct_tail1, ARRAY_SIZE(otm1901a_effect_ct_tail1)}},
+
 
 };
 #else

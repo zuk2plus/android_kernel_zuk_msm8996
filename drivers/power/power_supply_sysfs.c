@@ -218,6 +218,7 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(ns_charger),
 	POWER_SUPPLY_ATTR(calling),
 	POWER_SUPPLY_ATTR(screen_on),
+	POWER_SUPPLY_ATTR(ship_mode),
 #endif
 #ifdef SUPPORT_CPU_TEMP_MONITOR
 	POWER_SUPPLY_ATTR(temp_cpu0),
