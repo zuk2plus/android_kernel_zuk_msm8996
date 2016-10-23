@@ -4127,7 +4127,8 @@ static VOS_STATUS hdd_parse_ese_beacon_req(tANI_U8 *pValue,
                                      tCsrEseBeaconReq *pEseBcnReq)
 {
     tANI_U8 *inPtr = pValue;
-    int tempInt = 0;
+    uint8_t input = 0;
+    uint32_t tempInt = 0;
     int j = 0, i = 0, v = 0;
     char buf[32];
 
@@ -4150,11 +4151,11 @@ static VOS_STATUS hdd_parse_ese_beacon_req(tANI_U8 *pValue,
     v = sscanf(inPtr, "%31s ", buf);
     if (1 != v) return -EINVAL;
 
-    v = kstrtos32(buf, 10, &tempInt);
+    v = kstrtou8(buf, 10, &input);
     if (v < 0) return -EINVAL;
 
-    tempInt = VOS_MIN(tempInt, SIR_ESE_MAX_MEAS_IE_REQS);
-    pEseBcnReq->numBcnReqIe = tempInt;
+    input = VOS_MIN(input, SIR_ESE_MAX_MEAS_IE_REQS);
+    pEseBcnReq->numBcnReqIe = input;
 
     hddLog(LOG1, "Number of Bcn Req Ie fields: %d", pEseBcnReq->numBcnReqIe);
 
@@ -4175,24 +4176,24 @@ static VOS_STATUS hdd_parse_ese_beacon_req(tANI_U8 *pValue,
             v = sscanf(inPtr, "%31s ", buf);
             if (1 != v) return -EINVAL;
 
-            v = kstrtos32(buf, 10, &tempInt);
+            v = kstrtou32(buf, 10, &tempInt);
             if (v < 0) return -EINVAL;
 
             switch (i) {
             case 0:  /* Measurement token */
-                if (tempInt <= 0) {
+                if (!tempInt) {
                    VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-                             "Invalid Measurement Token(%d)", tempInt);
+                             "Invalid Measurement Token: %d", tempInt);
                    return -EINVAL;
                 }
                 pEseBcnReq->bcnReq[j].measurementToken = tempInt;
                 break;
 
             case 1:  /* Channel number */
-                if ((tempInt <= 0) ||
+                if ((!tempInt) ||
                     (tempInt > WNI_CFG_CURRENT_CHANNEL_STAMAX)) {
                    VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-                             "Invalid Channel Number(%d)", tempInt);
+                             "Invalid Channel Number: %d", tempInt);
                    return -EINVAL;
                 }
                 pEseBcnReq->bcnReq[j].channel = tempInt;
@@ -4202,19 +4203,18 @@ static VOS_STATUS hdd_parse_ese_beacon_req(tANI_U8 *pValue,
                 if ((tempInt < eSIR_PASSIVE_SCAN) ||
                     (tempInt > eSIR_BEACON_TABLE)) {
                    VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-                             "Invalid Scan Mode(%d) Expected{0|1|2}", tempInt);
+                             "Invalid Scan Mode: %d Expected{0|1|2}", tempInt);
                    return -EINVAL;
                 }
                 pEseBcnReq->bcnReq[j].scanMode= tempInt;
                 break;
 
             case 3:  /* Measurement duration */
-                if (((tempInt <= 0) &&
+                if (((!tempInt) &&
                     (pEseBcnReq->bcnReq[j].scanMode != eSIR_BEACON_TABLE)) ||
-                    ((tempInt < 0) &&
-                    (pEseBcnReq->bcnReq[j].scanMode == eSIR_BEACON_TABLE))) {
+                    ((pEseBcnReq->bcnReq[j].scanMode == eSIR_BEACON_TABLE))) {
                    VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-                             "Invalid Measurement Duration(%d)", tempInt);
+                             "Invalid Measurement Duration: %d", tempInt);
                    return -EINVAL;
                 }
                 pEseBcnReq->bcnReq[j].measurementDuration = tempInt;
@@ -4490,7 +4490,7 @@ static int hdd_set_rx_filter(hdd_adapter_t *adapter, bool action,
 			uint8_t pattern)
 {
 	int ret;
-	uint8_t i, j;
+	uint8_t i;
 	tHalHandle handle;
 	tSirRcvFltMcAddrList *filter;
 	hdd_context_t* hdd_ctx = WLAN_HDD_GET_CTX(adapter);
@@ -4529,20 +4529,19 @@ static int hdd_set_rx_filter(hdd_adapter_t *adapter, bool action,
 		}
 		vos_mem_zero(filter, sizeof(*filter));
 		filter->action = action;
-		for (i = 0, j = 0; i < adapter->mc_addr_list.mc_cnt; i++) {
+		for (i = 0; i < adapter->mc_addr_list.mc_cnt; i++) {
 			if (!memcmp(adapter->mc_addr_list.addr[i],
 				&pattern, 1)) {
-				memcpy(filter->multicastAddr[j],
+				memcpy(filter->multicastAddr[i],
 					adapter->mc_addr_list.addr[i],
 					sizeof(adapter->mc_addr_list.addr[i]));
+				filter->ulMulticastAddrCnt++;
 				hddLog(LOG1, "%s RX filter : addr ="
 				    MAC_ADDRESS_STR,
 				    action ? "setting" : "clearing",
-				    MAC_ADDR_ARRAY(filter->multicastAddr[j]));
-				j++;
+				    MAC_ADDR_ARRAY(filter->multicastAddr[i]));
 			}
 		}
-		filter->ulMulticastAddrCnt = j;
 		/* Set rx filter */
 		sme_8023MulticastList(handle, adapter->sessionId, filter);
 		vos_mem_free(filter);
@@ -9890,11 +9889,12 @@ static hdd_adapter_t* hdd_alloc_station_adapter( hdd_context_t *pHddCtx, tSirMac
       hdd_set_needed_headroom(pWlanDev, pWlanDev->hard_header_len);
       pWlanDev->hard_header_len += HDD_HW_NEEDED_HEADROOM;
 
-      if (pHddCtx->cfg_ini->enableIPChecksumOffload)
+      if (pHddCtx->cfg_ini->enableIPChecksumOffload) {
          pWlanDev->features |= NETIF_F_HW_CSUM;
-      else if (pHddCtx->cfg_ini->enableTCPChkSumOffld)
+      } else if (pHddCtx->cfg_ini->enableTCPChkSumOffld) {
          pWlanDev->features |= NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM;
          pWlanDev->features |= NETIF_F_RXCSUM;
+      }
       hdd_set_station_ops( pAdapter->dev );
 
       pWlanDev->destructor = free_netdev;
@@ -12878,6 +12878,10 @@ void hdd_wlan_exit(hdd_context_t *pHddCtx)
    if (VOS_FTM_MODE != hdd_get_conparam())
        wlan_hdd_logging_sock_deactivate_svc(pHddCtx);
 
+#ifdef WLAN_FEATURE_LPSS
+   wlan_hdd_send_status_pkg(NULL, NULL, 0, 0);
+#endif
+
 #ifdef WLAN_KD_READY_NOTIFIER
    cnss_diag_notify_wlan_close();
    nl_srv_exit(pHddCtx->ptt_pid);
@@ -12976,10 +12980,6 @@ void __hdd_wlan_exit(void)
 
    vos_set_load_unload_in_progress(VOS_MODULE_ID_VOSS, TRUE);
    vos_set_unload_in_progress(TRUE);
-
-#ifdef WLAN_FEATURE_LPSS
-   wlan_hdd_send_status_pkg(NULL, NULL, 0, 0);
-#endif
 
    hdd_close_tx_queues(pHddCtx);
    //Do all the cleanup before deregistering the driver

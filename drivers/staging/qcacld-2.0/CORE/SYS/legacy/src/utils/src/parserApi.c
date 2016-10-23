@@ -2188,7 +2188,7 @@ tSirRetStatus sirvalidateandrectifyies(tpAniSirGlobal pMac,
                                     tANI_U32 *nMissingRsnBytes)
 {
     tANI_U32 length = SIZE_OF_FIXED_PARAM;
-    tANI_U8 *refFrame;
+    tANI_U8 *refFrame = NULL;
 
     /* Frame contains atleast one IE */
     if (nFrameBytes > (SIZE_OF_FIXED_PARAM + 2)) {
@@ -2198,6 +2198,8 @@ tSirRetStatus sirvalidateandrectifyies(tpAniSirGlobal pMac,
             length += (tANI_U32)(SIZE_OF_TAG_PARAM_NUM + SIZE_OF_TAG_PARAM_LEN
                                  + (*(refFrame + SIZE_OF_TAG_PARAM_NUM)));
         }
+	if (!refFrame)
+		return eSIR_FAILURE;
         if (length != nFrameBytes) {
             /*
              * Workaround : Some APs may not include RSN Capability but
@@ -3681,6 +3683,11 @@ sirParseBeaconIE(tpAniSirGlobal        pMac,
     pBeaconStruct->Vendor1IEPresent = pBies->Vendor1IE.present;
     pBeaconStruct->Vendor2IEPresent = pBies->Vendor2IE.present;
     pBeaconStruct->Vendor3IEPresent = pBies->Vendor3IE.present;
+    if (pBies->ExtCap.present) {
+        pBeaconStruct->ExtCap.present = 1;
+        vos_mem_copy( &pBeaconStruct->ExtCap, &pBies->ExtCap,
+                sizeof(tDot11fIEExtCap));
+    }
 
     vos_mem_free(pBies);
     return eSIR_SUCCESS;
