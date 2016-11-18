@@ -43,6 +43,7 @@
 #define SUPPORT_CALL_POWER_OP
 #define SUPPORT_SOC_SHOW_OPTIMIZATION
 #define SUPPORT_CPU_TEMP_MONITOR
+#define SUPPORT_LENUK_BATTERY_ID_ALGO
 
 #ifdef SUPPORT_CPU_TEMP_MONITOR
 #include <linux/msm_tsens.h>
@@ -2860,7 +2861,7 @@ wait:
 						&chip->update_jeita_setting,
 						msecs_to_jiffies(UPDATE_JEITA_DELAY_MS));
 				}
-				fg_data[0].value -= BATT_TEMP_FLOAT_VALUE + 1;
+				fg_data[0].value -= BATT_TEMP_FLOAT_VALUE + 10;
 			} else {
 				fg_data[0].value -= BATT_TEMP_FLOAT_VALUE;
 			}
@@ -5952,6 +5953,16 @@ fail:
 }
 
 #ifdef SUPPORT_BATT_ID_RECHECK
+#ifdef SUPPORT_LENUK_BATTERY_ID_ALGO
+static int batt_id_is_vaild(int bid)
+{
+	if (((bid >= 1000) && (bid < 20000))
+			|| ((bid >= 20000) && (bid < 80000)))
+		return 1;
+	else
+		return 0;
+}
+#else
 #define SUPPORT_BATT_ID_NUM		3
 #define ID_RANGE_PCT			15
 static int battery_ids[] = {
@@ -5972,6 +5983,7 @@ static int batt_id_is_vaild(int bid)
 	}
 	return 0;
 }
+#endif
 #endif
 
 #define FG_PROFILE_LEN			128
