@@ -6,8 +6,8 @@ export CROSS_COMPILE="aarch64-linux-android-"
 export TOOL_CHAIN_PATH="${HOME}/caf/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin"
 export CONFIG_ABS_PATH="arch/${ARCH}/configs/${CONFIG_FILE}"
 export PATH=$PATH:${TOOL_CHAIN_PATH}
-export objdir="${HOME}/kernel/z2/obj"
-export sourcedir="${HOME}/kernel/z2/z2p"
+export objdir="/home/callmesuper/Mokee/kernel/zuk/obj"
+export sourcedir="/home/callmesuper/Mokee/kernel/zuk/msm8996"
 compile() {
   make O=$objdir ARCH=arm64 CROSS_COMPILE=${TOOL_CHAIN_PATH}/${CROSS_COMPILE}  $CONFIG_FILE -j4 
   make O=$objdir -j6
