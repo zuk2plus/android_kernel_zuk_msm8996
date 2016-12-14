@@ -32,6 +32,7 @@
 #include <linux/kernel.h>
 #include <linux/gpio.h>
 #include <linux/soundwire/swr-wcd.h>
+
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
@@ -44,6 +45,12 @@
 #include "wcd9xxx-resmgr-v2.h"
 #include "wcd_cpe_core.h"
 #include "wcdcal-hwdep.h"
+
+#ifdef CONFIG_SOUND_CONTROL
+#include <linux/sound_control.h>
+static struct snd_soc_codec *snd_control_codec;
+#endif
+
 
 #define TASHA_RX_PORT_START_NUMBER  16
 
@@ -5449,6 +5456,13 @@ static int tasha_codec_enable_dec(struct snd_soc_dapm_widget *w,
 		break;
 	case SND_SOC_DAPM_POST_PMU:
 		snd_soc_update_bits(codec, hpf_gate_reg, 0x01, 0x00);
+
+		if (decimator == 0) {
+			snd_soc_write(codec, WCD9335_MBHC_ZDET_RAMP_CTL, 0x83);
+			snd_soc_write(codec, WCD9335_MBHC_ZDET_RAMP_CTL, 0xA3);
+			snd_soc_write(codec, WCD9335_MBHC_ZDET_RAMP_CTL, 0x83);
+			snd_soc_write(codec, WCD9335_MBHC_ZDET_RAMP_CTL, 0x03);
+		}
 		/* schedule work queue to Remove Mute */
 		schedule_delayed_work(&tasha->tx_mute_dwork[decimator].dwork,
 				      msecs_to_jiffies(tx_unmute_delay));
@@ -12580,6 +12594,22 @@ static struct regulator *tasha_codec_find_ondemand_regulator(
 	return NULL;
 }
 
+#ifdef CONFIG_SOUND_CONTROL
+unsigned int sound_control_write(unsigned int reg, int val)
+{
+	int ori_val;
+	unsigned int boost_val;
+
+	ori_val = snd_soc_read(snd_control_codec, reg);
+
+	boost_val = ori_val + val;
+
+	snd_soc_write(snd_control_codec, reg, boost_val);
+
+	return boost_val;
+  }
+#endif
+
 static int tasha_codec_probe(struct snd_soc_codec *codec)
 {
 	struct wcd9xxx *control;
@@ -12589,6 +12619,11 @@ static int tasha_codec_probe(struct snd_soc_codec *codec)
 	int i, ret;
 	void *ptr = NULL;
 	struct regulator *supply;
+
+#ifdef CONFIG_SOUND_CONTROL
+	pr_info("soundcontrol codec probe...\n");
+	snd_control_codec = codec;
+#endif
 
 	control = dev_get_drvdata(codec->dev->parent);
 
@@ -12774,7 +12809,7 @@ static int tasha_codec_probe(struct snd_soc_codec *codec)
 	snd_soc_dapm_disable_pin(dapm, "ANC EAR");
 	mutex_unlock(&codec->mutex);
 	snd_soc_dapm_sync(dapm);
-
+ 		
 	return ret;
 
 err_pdata:

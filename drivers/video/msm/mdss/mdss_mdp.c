@@ -52,7 +52,6 @@
 #include "mdss_panel.h"
 #include "mdss_debug.h"
 #include "mdss_mdp_debug.h"
-#include "mdss_mdp_rotator.h"
 #include "mdss_smmu.h"
 
 #include "mdss_mdp_trace.h"
@@ -1237,7 +1236,7 @@ static int mdss_mdp_debug_init(struct platform_device *pdev,
 
 	mdss_debug_register_io("mdp", &mdata->mdss_io, &dbg_blk);
 	mdss_debug_register_dump_range(pdev, dbg_blk, "qcom,regs-dump-mdp",
-		"qcom,regs-dump-names-mdp");
+		"qcom,regs-dump-names-mdp", "qcom,regs-dump-xin-id-mdp");
 
 	mdss_debug_register_io("vbif", &mdata->vbif_io, NULL);
 	mdss_debug_register_io("vbif_nrt", &mdata->vbif_nrt_io, NULL);
@@ -1972,11 +1971,6 @@ static int mdss_mdp_probe(struct platform_device *pdev)
 	rc = mdss_mdp_bus_scale_register(mdata);
 	if (rc) {
 		pr_err("unable to register bus scaling\n");
-		goto probe_done;
-	}
-	rc = mdss_mdp_rot_mgr_init();
-	if (rc) {
-		pr_err("unable to initialize rotation mgr\n");
 		goto probe_done;
 	}
 

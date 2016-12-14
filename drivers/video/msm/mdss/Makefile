@@ -11,7 +11,6 @@ mdss-mdp-objs += mdss_mdp_pp.o mdss_mdp_pp_debug.o mdss_mdp_pp_cache_config.o
 mdss-mdp-objs += mdss_mdp_intf_video.o
 mdss-mdp-objs += mdss_mdp_intf_cmd.o
 mdss-mdp-objs += mdss_mdp_intf_writeback.o
-mdss-mdp-objs += mdss_mdp_rotator.o
 mdss-mdp-objs += mdss_rotator.o
 mdss-mdp-objs += mdss_mdp_overlay.o
 mdss-mdp-objs += mdss_mdp_layer.o
@@ -69,4 +68,7 @@ obj-$(CONFIG_FB_MSM_QPIC_ILI_QVGA_PANEL) += qpic_panel_ili_qvga.o
 obj-$(CONFIG_FB_MSM_MDSS) += mdss_fb.o mdss_util.o
 obj-$(CONFIG_COMPAT) += mdss_compat_utils.o
 
-obj-$(CONFIG_FB_MSM_MDSS) += mdss_livedisplay.o
+obj-$(CONFIG_FB_MSM_MDSS) += lcd_notify.o
+
+obj-$(CONFIG_FB_MSM_MDSS_KCAL_CTRL) += mdss_mdp_kcal_ctrl.o
+

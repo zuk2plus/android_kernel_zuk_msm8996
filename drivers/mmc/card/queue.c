@@ -21,6 +21,7 @@
 
 #include <linux/mmc/card.h>
 #include <linux/mmc/host.h>
+#include <linux/sched/rt.h>
 #include "queue.h"
 
 #define MMC_QUEUE_BOUNCESZ	65536
@@ -145,6 +146,11 @@ static int mmc_queue_thread(void *d)
 	struct mmc_queue *mq = d;
 	struct request_queue *q = mq->queue;
 	struct mmc_card *card = mq->card;
+
+        struct sched_param scheduler_params = {0};
+        scheduler_params.sched_priority = 1;
+
+        sched_setscheduler(current, SCHED_FIFO, &scheduler_params);
 
 	current->flags |= PF_MEMALLOC;
 	if (card->host->wakeup_on_idle)
@@ -608,9 +614,33 @@ static void mmc_cmdq_error_work(struct work_struct *work)
 enum blk_eh_timer_return mmc_cmdq_rq_timed_out(struct request *req)
 {
 	struct mmc_queue *mq = req->q->queuedata;
+	static ktime_t last_timeout;
+	static int mmc_cmdq_req_timeout_count;
+	ktime_t now;
+	s64 delta;
+
 
 	pr_err("%s: request with tag: %d flags: 0x%llx timed out\n",
 	       mmc_hostname(mq->card->host), req->tag, req->cmd_flags);
+
+	if (!mmc_cmdq_req_timeout_count) {
+		last_timeout = ktime_get();
+		mmc_cmdq_req_timeout_count = 1;
+	} else {
+		now = ktime_get();
+		delta = ktime_to_ms(ktime_sub(now, last_timeout));
+
+		/* count only if two sequenet requests are
+		   timeout within 5 mins */
+		if (delta < 300000)
+			mmc_cmdq_req_timeout_count++;
+		else
+			mmc_cmdq_req_timeout_count = 0;
+		last_timeout = now;
+	}
+
+	if (mmc_cmdq_req_timeout_count >= 10)
+		BUG();
 
 	return mq->cmdq_req_timed_out(req);
 }
@@ -663,7 +693,7 @@ int mmc_cmdq_init(struct mmc_queue *mq, struct mmc_card *card)
 	init_completion(&mq->cmdq_pending_req_done);
 
 	blk_queue_rq_timed_out(mq->queue, mmc_cmdq_rq_timed_out);
-	blk_queue_rq_timeout(mq->queue, 120 * HZ);
+	blk_queue_rq_timeout(mq->queue, 30 * HZ);
 	card->cmdq_init = true;
 
 	goto out;

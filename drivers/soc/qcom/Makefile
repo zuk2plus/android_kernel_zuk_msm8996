@@ -1,7 +1,5 @@
 KASAN_SANITIZE_scm.o := n
 
-CFLAGS_tracer_pkt.o := -I$(src)
-
 CFLAGS_scm.o :=$(call as-instr,.arch_extension sec,-DREQUIRES_SEC=1)
 
 ccflags-$(CONFIG_MSM_QBT1000) += -Idrivers/misc/
@@ -72,6 +70,7 @@ obj-$(CONFIG_MSM_PIL)   +=      peripheral-loader.o
 obj-$(CONFIG_MSM_PIL_SSR_GENERIC) += subsys-pil-tz.o
 obj-$(CONFIG_MSM_PIL_MSS_QDSP6V5) += pil-q6v5.o pil-msa.o pil-q6v5-mss.o
 obj-$(CONFIG_MSM_CORE_CTL_HELPER) += core_ctl_helper.o
+obj-$(CONFIG_MSM_CORE_CTL) += core_ctl.o
 obj-$(CONFIG_MSM_SCM_ERRATA) += scm-errata.o
 obj-$(CONFIG_MSM_PFE_WA) += pfe-wa.o
 obj-$(CONFIG_MSM_PERFORMANCE) += msm_performance.o
@@ -95,5 +94,6 @@ obj-$(CONFIG_MSM_QBT1000) += qbt1000.o
 obj-$(CONFIG_MSM_SCM_XPU) += scm-xpu.o
 obj-$(CONFIG_MSM_KERNEL_PROTECT) += kernel_protect.o
 obj-$(CONFIG_MSM_RTB) += msm_rtb-hotplug.o
+obj-$(CONFIG_MMI_STORAGE_INFO) += mmi_storage_info.o
 
 obj-y += shenqi_nv.o

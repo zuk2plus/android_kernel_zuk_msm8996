@@ -302,10 +302,6 @@ menuconfig MSM_SCM_XPU
 
 if MSM_SCM_XPU
 
-choice
-	prompt "XPU Violation Behavior"
-	default MSM_XPU_ERR_FATAL
-
 config MSM_XPU_ERR_FATAL
 	bool "Configure XPU violations as fatal errors"
 	help
@@ -315,8 +311,6 @@ config MSM_XPU_ERR_NONFATAL
 	bool "Configure XPU violations as non-fatal errors"
 	help
 	 Select if XPU violations have to be configured as non-fatal errors.
-
-endchoice
 
 endif
 
@@ -419,6 +413,12 @@ config MSM_GLINK_SMEM_NATIVE_XPRT
 	  physical transport.  The nature of shared memory limits this G-Link
 	  transport to only connecting with entities internal to the
 	  System-on-Chip.
+
+config PANIC_ON_GLINK_ERR
+	bool "Cause a Kernel Panic When Repeated glink Errors Occur"
+	help
+	 Select this option to upgrade warnings for potentially unrecoverable
+	 glink failures, to a kernel panic for easier detection and debug
 
 config MSM_SPCOM
 	depends on MSM_GLINK
@@ -659,6 +659,15 @@ config MSM_CORE_CTL_HELPER
 	  system load and state. It also supports limiting min and
 	  max online CPUs from userspace.
 
+config MSM_CORE_CTL
+        select MSM_CORE_CTL_HELPER
+        tristate "Core control driver to dynamically hotplug CPUs"
+        help
+          Support for dynamicatlly hotplugging CPUs from kernel based on
+          current system load and state. It also supports limiting min and
+          max online CPUs from userspace.
+
+
 config MSM_BAM_DMUX
 	bool "BAM Data Mux Driver"
 	depends on SPS
@@ -738,6 +747,12 @@ config MSM_KERNEL_PROTECT_TEST
           Attempts to write to the kernel text after making the kernel text
           read-only.  This test is FATAL whether it passes or fails!
           Success is signaled by a stage-2 fault.
+
+config MMI_STORAGE_INFO
+	default n
+	bool "Motorola Mobility STORAGE Info"
+	help
+	Provide mechanism to export EMMC/UFS type, size and vendor info.
 
 source "drivers/soc/qcom/memshare/Kconfig"
 

@@ -55,7 +55,6 @@
 #include "mdss_smmu.h"
 #include "mdss_mdp.h"
 #include "lcd_effect.h"
-#include "mdss_livedisplay.h"
 
 #ifdef CONFIG_FB_MSM_TRIPLE_BUFFER
 #define MDSS_FB_NUM 3
@@ -1045,8 +1044,7 @@ static int mdss_fb_create_sysfs(struct msm_fb_data_type *mfd)
 	rc = sysfs_create_group(&mfd->fbi->dev->kobj, &mdss_fb_attr_group);
 	if (rc)
 		pr_err("sysfs group creation failed, rc=%d\n", rc);
-
-	return mdss_livedisplay_create_sysfs(mfd);
+	return rc;
 }
 
 static void mdss_fb_remove_sysfs(struct msm_fb_data_type *mfd)
@@ -4694,7 +4692,6 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 	void __user *argp = (void __user *)arg;
 	int ret = -ENOSYS;
 	struct mdp_buf_sync buf_sync;
-	struct msm_sync_pt_data *sync_pt_data = NULL;
 	unsigned int dsi_mode = 0;
 	struct mdss_panel_data *pdata = NULL;
 
@@ -4736,18 +4733,13 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 		if (ret)
 			goto exit;
 
-		if (mfd->mdp.get_sync_fnc)
-			sync_pt_data = mfd->mdp.get_sync_fnc(mfd, &buf_sync);
-		if (!sync_pt_data) {
-			if ((!mfd->op_enable) || (mdss_fb_is_power_off(mfd))) {
-				ret = -EPERM;
-				goto exit;
-			}
-			sync_pt_data = &mfd->mdp_sync_pt_data;
+		if ((!mfd->op_enable) || (mdss_fb_is_power_off(mfd))) {
+			ret = -EPERM;
+			goto exit;
 		}
 
-		ret = mdss_fb_handle_buf_sync_ioctl(sync_pt_data, &buf_sync);
-
+		ret = mdss_fb_handle_buf_sync_ioctl(&mfd->mdp_sync_pt_data,
+				&buf_sync);
 		if (!ret)
 			ret = copy_to_user(argp, &buf_sync, sizeof(buf_sync));
 		break;
@@ -4805,20 +4797,6 @@ static int mdss_fb_ioctl(struct fb_info *info, unsigned int cmd,
 
 	return mdss_fb_do_ioctl(info, cmd, arg, file);
 }
-
-struct fb_info *msm_fb_get_writeback_fb(void)
-{
-	int c = 0;
-	for (c = 0; c < fbi_list_index; ++c) {
-		struct msm_fb_data_type *mfd;
-		mfd = (struct msm_fb_data_type *)fbi_list[c]->par;
-		if (mfd->panel.type == WRITEBACK_PANEL)
-			return fbi_list[c];
-	}
-
-	return NULL;
-}
-EXPORT_SYMBOL(msm_fb_get_writeback_fb);
 
 static int mdss_fb_register_extra_panel(struct platform_device *pdev,
 	struct mdss_panel_data *pdata)

@@ -189,17 +189,29 @@ void cpu_hotplug_done(void)
  * hotplug path before performing hotplug operations. So acquiring that lock
  * guarantees mutual exclusion from any currently running hotplug operations.
  */
+
+static void _cpu_hotplug_disable(void)
+{
+	cpu_hotplug_disabled++;
+}
 void cpu_hotplug_disable(void)
 {
 	cpu_maps_update_begin();
-	cpu_hotplug_disabled = 1;
+	_cpu_hotplug_disable();
 	cpu_maps_update_done();
 }
 
+static void _cpu_hotplug_enable(void)
+{
+	if (--cpu_hotplug_disabled < 0) {
+		WARN(1, "unbalanced hotplug enable %d\n", cpu_hotplug_disabled);
+		cpu_hotplug_disabled = 0;
+	}
+}
 void cpu_hotplug_enable(void)
 {
 	cpu_maps_update_begin();
-	cpu_hotplug_disabled = 0;
+	_cpu_hotplug_enable();
 	cpu_maps_update_done();
 }
 
@@ -561,8 +573,7 @@ int disable_nonboot_cpus(void)
 	 */
 	cpumask_clear(frozen_cpus);
 
-	pr_debug("Disabling non-boot CPUs ...\n");
-	sched_set_boost(0);//Wujialong 20160314 disable sched_boost when going to sleep
+	pr_info("Disabling non-boot CPUs ...\n");
 	for_each_online_cpu(cpu) {
 		if (cpu == first_cpu)
 			continue;
@@ -579,11 +590,11 @@ int disable_nonboot_cpus(void)
 
 	if (!error) {
 		BUG_ON(num_online_cpus() > 1);
-		/* Make sure the CPUs won't be enabled by someone else */
-		cpu_hotplug_disabled = 1;
 	} else {
 		pr_err("Non-boot CPUs are not disabled\n");
 	}
+
+	_cpu_hotplug_disable();
 	cpu_maps_update_done();
 	return error;
 }
@@ -602,11 +613,11 @@ void __ref enable_nonboot_cpus(void)
 
 	/* Allow everyone to use the CPU hotplug again */
 	cpu_maps_update_begin();
-	cpu_hotplug_disabled = 0;
+	_cpu_hotplug_enable();
 	if (cpumask_empty(frozen_cpus))
 		goto out;
 
-	pr_debug("Enabling non-boot CPUs ...\n");
+	pr_info("Enabling non-boot CPUs ...\n");
 
 	arch_enable_nonboot_cpus_begin();
 
@@ -615,7 +626,7 @@ void __ref enable_nonboot_cpus(void)
 		error = _cpu_up(cpu, 1);
 		trace_suspend_resume(TPS("CPU_ON"), cpu, false);
 		if (!error) {
-			pr_debug("CPU%d is up\n", cpu);
+			pr_info("CPU%d is up\n", cpu);
 			continue;
 		}
 		pr_warn("Error taking CPU%d up: %d\n", cpu, error);

@@ -298,6 +298,9 @@ struct mdss_mdp_ctl {
 	u32 vsync_cnt;
 	u32 underrun_cnt;
 
+	struct work_struct cpu_pm_work;
+	int autorefresh_frame_cnt;
+
 	u16 width;
 	u16 height;
 	u16 border_x_off;
@@ -1173,6 +1176,39 @@ static inline int mdss_mdp_get_display_id(struct mdss_mdp_pipe *pipe)
 	return (pipe && pipe->mfd) ? pipe->mfd->index : -1;
 }
 
+
+
+static inline u32 mdss_mdp_get_rotator_dst_format(u32 in_format, u32 in_rot90,
+	u32 bwc)
+{
+	switch (in_format) {
+	case MDP_RGB_565:
+	case MDP_BGR_565:
+		if (in_rot90)
+			return MDP_RGB_888;
+		else
+			return in_format;
+	case MDP_RGBA_8888:
+		if (bwc)
+			return MDP_BGRA_8888;
+		else
+			return in_format;
+	case MDP_Y_CBCR_H2V2_VENUS:
+	case MDP_Y_CRCB_H2V2_VENUS:
+	case MDP_Y_CBCR_H2V2:
+		if (in_rot90)
+			return MDP_Y_CRCB_H2V2;
+		else
+			return in_format;
+	case MDP_Y_CB_CR_H2V2:
+	case MDP_Y_CR_CB_GH2V2:
+	case MDP_Y_CR_CB_H2V2:
+		return MDP_Y_CRCB_H2V2;
+	default:
+		return in_format;
+	}
+}
+
 irqreturn_t mdss_mdp_isr(int irq, void *ptr);
 void mdss_mdp_irq_clear(struct mdss_data_type *mdata,
 		u32 intr_type, u32 intf_num);
@@ -1314,6 +1350,7 @@ int mdss_mdp_mixer_pipe_update(struct mdss_mdp_pipe *pipe,
 int mdss_mdp_mixer_pipe_unstage(struct mdss_mdp_pipe *pipe,
 	struct mdss_mdp_mixer *mixer);
 void mdss_mdp_mixer_unstage_all(struct mdss_mdp_mixer *mixer);
+void mdss_mdp_reset_mixercfg(struct mdss_mdp_ctl *ctl);
 int mdss_mdp_display_commit(struct mdss_mdp_ctl *ctl, void *arg,
 	struct mdss_mdp_commit_cb *commit_cb);
 int mdss_mdp_display_wait4comp(struct mdss_mdp_ctl *ctl);
@@ -1454,9 +1491,6 @@ bool mdss_rect_overlap_check(struct mdss_rect *rect1, struct mdss_rect *rect2);
 void mdss_rect_split(struct mdss_rect *in_roi, struct mdss_rect *l_roi,
 	struct mdss_rect *r_roi, u32 splitpoint);
 
-int mdss_mdp_wb_kickoff(struct msm_fb_data_type *mfd,
-		struct mdss_mdp_commit_cb *commit_cb);
-int mdss_mdp_wb_ioctl_handler(struct msm_fb_data_type *mfd, u32 cmd, void *arg);
 
 int mdss_mdp_get_ctl_mixers(u32 fb_num, u32 *mixer_id);
 u32 mdss_mdp_get_mixer_mask(u32 pipe_num, u32 stage);
@@ -1477,13 +1511,8 @@ void mdss_mdp_set_roi(struct mdss_mdp_ctl *ctl,
 	struct mdss_rect *l_roi, struct mdss_rect *r_roi);
 void mdss_mdp_mixer_update_pipe_map(struct mdss_mdp_ctl *master_ctl,
 		int mixer_mux);
-int mdss_mdp_wb_set_format(struct msm_fb_data_type *mfd, u32 dst_format);
-int mdss_mdp_wb_get_format(struct msm_fb_data_type *mfd,
-					struct mdp_mixer_cfg *mixer_cfg);
 
 void mdss_mdp_pipe_calc_pixel_extn(struct mdss_mdp_pipe *pipe);
-int mdss_mdp_wb_set_secure(struct msm_fb_data_type *mfd, int enable);
-int mdss_mdp_wb_get_secure(struct msm_fb_data_type *mfd, uint8_t *enable);
 void mdss_mdp_ctl_restore(bool locked);
 int  mdss_mdp_ctl_reset(struct mdss_mdp_ctl *ctl, bool is_recovery);
 int mdss_mdp_wait_for_xin_halt(u32 xin_id, bool is_vbif_nrt);
@@ -1492,6 +1521,7 @@ int mdss_mdp_cmd_set_autorefresh_mode(struct mdss_mdp_ctl *ctl, int frame_cnt);
 int mdss_mdp_cmd_get_autorefresh_mode(struct mdss_mdp_ctl *ctl);
 int mdss_mdp_ctl_cmd_set_autorefresh(struct mdss_mdp_ctl *ctl, int frame_cnt);
 int mdss_mdp_ctl_cmd_get_autorefresh(struct mdss_mdp_ctl *ctl);
+void mdss_mdp_ctl_event_timer(void *data);
 int mdss_mdp_pp_get_version(struct mdp_pp_feature_version *version);
 
 struct mdss_mdp_ctl *mdss_mdp_ctl_alloc(struct mdss_data_type *mdata,

@@ -46,6 +46,7 @@
 #include "qseecom_legacy.h"
 #include "qseecom_kernel.h"
 #include <crypto/ice.h>
+#include <linux/delay.h>
 
 #ifdef CONFIG_COMPAT
 #include <linux/compat.h>
@@ -638,7 +639,9 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 			if (!tzbuf)
 				return -ENOMEM;
 			memset(tzbuf, 0, tzbuflen);
-			memcpy(tzbuf, req_buf + sizeof(uint32_t), tzbuflen);
+			memcpy(tzbuf, req_buf + sizeof(uint32_t),
+				(sizeof(struct qseecom_key_generate_ireq) -
+				sizeof(uint32_t)));
 			dmac_flush_range(tzbuf, tzbuf + tzbuflen);
 			smc_id = TZ_OS_KS_GEN_KEY_ID;
 			desc.arginfo = TZ_OS_KS_GEN_KEY_ID_PARAM_ID;
@@ -660,7 +663,9 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 				return -ENOMEM;
 			}
 			memset(tzbuf, 0, tzbuflen);
-			memcpy(tzbuf, req_buf + sizeof(uint32_t), tzbuflen);
+			memcpy(tzbuf, req_buf + sizeof(uint32_t),
+				(sizeof(struct qseecom_key_delete_ireq) -
+				sizeof(uint32_t)));
 			dmac_flush_range(tzbuf, tzbuf + tzbuflen);
 			smc_id = TZ_OS_KS_DEL_KEY_ID;
 			desc.arginfo = TZ_OS_KS_DEL_KEY_ID_PARAM_ID;
@@ -682,7 +687,9 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 				return -ENOMEM;
 			}
 			memset(tzbuf, 0, tzbuflen);
-			memcpy(tzbuf, req_buf + sizeof(uint32_t), tzbuflen);
+			memcpy(tzbuf, req_buf + sizeof(uint32_t),
+				(sizeof(struct qseecom_key_select_ireq) -
+				sizeof(uint32_t)));
 			dmac_flush_range(tzbuf, tzbuf + tzbuflen);
 			smc_id = TZ_OS_KS_SET_PIPE_KEY_ID;
 			desc.arginfo = TZ_OS_KS_SET_PIPE_KEY_ID_PARAM_ID;
@@ -704,7 +711,9 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 				return -ENOMEM;
 			}
 			memset(tzbuf, 0, tzbuflen);
-			memcpy(tzbuf, req_buf + sizeof(uint32_t), tzbuflen);
+			memcpy(tzbuf, req_buf + sizeof(uint32_t), (sizeof
+				(struct qseecom_key_userinfo_update_ireq) -
+				sizeof(uint32_t)));
 			dmac_flush_range(tzbuf, tzbuf + tzbuflen);
 			smc_id = TZ_OS_KS_UPDATE_KEY_ID;
 			desc.arginfo = TZ_OS_KS_UPDATE_KEY_ID_PARAM_ID;
@@ -2200,7 +2209,7 @@ static int qseecom_unload_app(struct qseecom_dev_handle *data,
 
 	if (!memcmp(data->client.app_name, "keymaste", strlen("keymaste"))) {
 		pr_debug("Do not unload keymaster app from tz\n");
-		return 0;
+		goto unload_exit;
 	}
 
 	__qseecom_cleanup_app(data);
@@ -2252,7 +2261,7 @@ static int qseecom_unload_app(struct qseecom_dev_handle *data,
 			pr_err("scm_call to unload app (id = %d) failed\n",
 								req.app_id);
 			ret = -EFAULT;
-			goto not_release_exit;
+			goto unload_exit;
 		} else {
 			pr_warn("App id %d now unloaded\n", req.app_id);
 		}
@@ -2260,7 +2269,7 @@ static int qseecom_unload_app(struct qseecom_dev_handle *data,
 			pr_err("app (%d) unload_failed!!\n",
 					data->client.app_id);
 			ret = -EFAULT;
-			goto not_release_exit;
+			goto unload_exit;
 		}
 		if (resp.result == QSEOS_RESULT_SUCCESS)
 			pr_debug("App (%d) is unloaded!!\n",
@@ -2270,7 +2279,7 @@ static int qseecom_unload_app(struct qseecom_dev_handle *data,
 			if (ret) {
 				pr_err("process_incomplete_cmd fail err: %d\n",
 									ret);
-				goto not_release_exit;
+				goto unload_exit;
 			}
 		}
 	}
@@ -2300,7 +2309,6 @@ static int qseecom_unload_app(struct qseecom_dev_handle *data,
 unload_exit:
 	qseecom_unmap_ion_allocated_memory(data);
 	data->released = true;
-not_release_exit:
 	return ret;
 }
 
@@ -5307,6 +5315,11 @@ static int qseecom_create_key(struct qseecom_dev_handle *data,
 			ret = __qseecom_set_clear_ce_key(data,
 					create_key_req.usage,
 					&set_key_ireq);
+			/* wait a little before calling scm again to let other
+			   processes run */
+			if (ret == QSEOS_RESULT_FAIL_PENDING_OPERATION)
+				msleep(50);
+
 		} while (ret == QSEOS_RESULT_FAIL_PENDING_OPERATION);
 
 		qseecom_disable_ice_setup(create_key_req.usage);
@@ -5478,6 +5491,11 @@ static int qseecom_update_key_user_info(struct qseecom_dev_handle *data,
 		ret = __qseecom_update_current_key_user_info(data,
 						update_key_req.usage,
 						&ireq);
+		/* wait a little before calling scm again to let other
+		   processes run */
+		if (ret == QSEOS_RESULT_FAIL_PENDING_OPERATION)
+			msleep(50);
+
 	} while (ret == QSEOS_RESULT_FAIL_PENDING_OPERATION);
 	if (ret) {
 		pr_err("Failed to update key info: %d\n", ret);

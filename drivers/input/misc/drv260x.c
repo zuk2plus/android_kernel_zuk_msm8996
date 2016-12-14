@@ -208,7 +208,7 @@ struct drv260x_data {
 	struct pinctrl_state *pin_sleep;
 	struct pinctrl *pinctrl;
 	int init_result;
-	struct delayed_work init_work;
+	struct work_struct init_work;
 };
 
 static const struct reg_default drv260x_reg_defs[] = {
@@ -248,7 +248,6 @@ static const struct reg_default drv260x_reg_defs[] = {
 	{ DRV260X_VBAT_MON, 0x00 },
 	{ DRV260X_LRA_RES_PERIOD, 0x00 },
 };
-static struct i2c_driver drv260x_driver;
 
 #define DRV260X_DEF_RATED_VOLT		0x90
 #define DRV260X_DEF_OD_CLAMP_VOLT	0x90
@@ -543,30 +542,9 @@ static int drv260x_cal(struct drv260x_data *haptics)
 
 }
 
-static int drv260x_do_hw_check(struct drv260x_data *haptics)
-{
-	int error;
-	unsigned int val;
-
-	gpio_set_value(haptics->enable_gpio, 1);
-	udelay(250);
-
-	error = regmap_read(haptics->regmap, DRV260X_STATUS, &val);
-	if (error) {
-		dev_err(&haptics->client->dev,
-				"Failed to read status register: %d\n",
-				error);
-		gpio_set_value(haptics->enable_gpio, 0);
-		return error;
-	}
-
-	return 0;
-}
-
 static void drv260x_do_init_work(struct work_struct *init_work)
 {
-	struct drv260x_data *haptics = container_of(init_work, struct drv260x_data, init_work.work);
-	struct i2c_client *client = haptics->client;
+	struct drv260x_data *haptics = container_of(init_work, struct drv260x_data, init_work);
 	int error;
 
 	gpio_set_value(haptics->enable_gpio, 1);
@@ -604,26 +582,13 @@ static void drv260x_do_init_work(struct work_struct *init_work)
 	haptics->init_result = 1;
 	gpio_set_value(haptics->enable_gpio, 0);
 
-	error = input_register_device(haptics->input_dev);
-	if (error) {
-		dev_err(&client->dev, "couldn't register input device: %d\n",
-			error);
-		goto err_return;
-	}
-
-	error = sysfs_create_group(&client->dev.kobj, &drv260x_attr_group);
-	if (error) {
-		dev_err(&client->dev,
-				"%s-->Unable to create sysfs,"
-				" errors: %d\n", __func__, error);
-	}
 	return;
 
 err_return:
 	haptics->init_result = 0;
 	gpio_set_value(haptics->enable_gpio, 0);
 
-	return;
+
 }
 
 static const struct regmap_config drv260x_regmap_config = {
@@ -837,7 +802,7 @@ static int drv260x_probe(struct i2c_client *client,
 	}
 
 	INIT_WORK(&haptics->work, drv260x_worker);
-	INIT_DELAYED_WORK(&haptics->init_work, drv260x_do_init_work);
+	INIT_WORK(&haptics->init_work, drv260x_do_init_work);
 
 	haptics->client = client;
 	i2c_set_clientdata(client, haptics);
@@ -850,13 +815,8 @@ static int drv260x_probe(struct i2c_client *client,
 		return error;
 	}
 
-	/* Check whether hw ok */
-	error = drv260x_do_hw_check(haptics);
-	if (error)
-		return error;
+	schedule_work(&haptics->init_work);
 
-	schedule_delayed_work(&haptics->init_work, msecs_to_jiffies(100));
-/*
 	error = input_register_device(haptics->input_dev);
 	if (error) {
 		dev_err(&client->dev, "couldn't register input device: %d\n",
@@ -872,7 +832,7 @@ static int drv260x_probe(struct i2c_client *client,
 				" errors: %d\n", __func__, error);
 		return error;
 	}
-*/
+
 	return 0;
 }
 
@@ -913,7 +873,7 @@ static int __maybe_unused drv260x_suspend(struct device *dev)
 	}
 out:
 	mutex_unlock(&haptics->input_dev->mutex);
-	return 0;
+	return ret;
 }
 
 static int __maybe_unused drv260x_resume(struct device *dev)
@@ -955,7 +915,7 @@ static int __maybe_unused drv260x_resume(struct device *dev)
 
 out:
 	mutex_unlock(&haptics->input_dev->mutex);
-	return 0;
+	return ret;
 }
 
 static SIMPLE_DEV_PM_OPS(drv260x_pm_ops, drv260x_suspend, drv260x_resume);

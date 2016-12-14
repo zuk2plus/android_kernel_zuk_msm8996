@@ -30,7 +30,6 @@
 #include "mdss_debug.h"
 #include "mdss_fb.h"
 #include "mdss_mdp.h"
-#include "mdss_mdp_rotator.h"
 #include "mdss_mdp_wfd.h"
 
 #define CHECK_LAYER_BOUNDS(offset, size, max_size) \
@@ -726,7 +725,6 @@ static struct sync_fence *__create_fence(struct msm_fb_data_type *mfd,
 		goto end;
 	}
 
-	sync_fence_install(sync_fence, *fence_fd);
 end:
 	return sync_fence;
 }
@@ -799,6 +797,9 @@ static int __handle_buffer_fences(struct msm_fb_data_type *mfd,
 		ret = PTR_ERR(retire_fence);
 		goto retire_fence_err;
 	}
+
+	sync_fence_install(release_fence, commit->release_fence);
+	sync_fence_install(retire_fence, commit->retire_fence);
 
 	mutex_unlock(&sync_pt_data->sync_mutex);
 	return ret;

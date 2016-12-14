@@ -153,10 +153,10 @@ extern void get_avenrun(unsigned long *loads, unsigned long offset, int shift);
 
 #define FSHIFT		11		/* nr of bits of precision */
 #define FIXED_1		(1<<FSHIFT)	/* 1.0 as fixed-point */
-#define LOAD_FREQ	(5*HZ+1)	/* 5 sec intervals */
-#define EXP_1		1884		/* 1/exp(5sec/1min) as fixed-point */
-#define EXP_5		2014		/* 1/exp(5sec/5min) */
-#define EXP_15		2037		/* 1/exp(5sec/15min) */
+#define LOAD_FREQ	(4*HZ+61)	/* 5 sec intervals */
+#define EXP_1		1896		/* 1/exp(5sec/1min) as fixed-point */
+#define EXP_5		2017		/* 1/exp(5sec/5min) */
+#define EXP_15		2038		/* 1/exp(5sec/15min) */
 
 #define CALC_LOAD(load,exp,n) \
 	load *= exp; \
@@ -1137,6 +1137,7 @@ struct sched_statistics {
 #endif
 
 #define RAVG_HIST_SIZE_MAX  5
+#define NUM_BUSY_BUCKETS 10
 
 /* ravg represents frequency scaled cpu-demand of tasks */
 struct ravg {
@@ -1161,6 +1162,11 @@ struct ravg {
 	 *
 	 * 'prev_window' represents task's contribution to cpu busy time
 	 * statistics (rq->prev_runnable_sum) in previous window
+	 *
+	 * 'pred_demand' represents task's current predicted cpu busy time
+	 *
+	 * 'busy_buckets' groups historical busy time into different buckets
+	 * used for prediction
 	 */
 	u64 mark_start;
 	u32 sum, demand;
@@ -1168,6 +1174,8 @@ struct ravg {
 #ifdef CONFIG_SCHED_FREQ_INPUT
 	u32 curr_window, prev_window;
 	u16 active_windows;
+	u32 pred_demand;
+	u8 busy_buckets[NUM_BUSY_BUCKETS];
 #endif
 };
 
@@ -1972,6 +1980,7 @@ extern int task_free_unregister(struct notifier_block *n);
 struct sched_load {
 	unsigned long prev_load;
 	unsigned long new_task_load;
+	unsigned long predicted_load;
 };
 
 #if defined(CONFIG_SCHED_FREQ_INPUT)

@@ -61,6 +61,18 @@
 #define arch_rebalance_pgtables(addr, len)		(addr)
 #endif
 
+#ifdef CONFIG_HAVE_ARCH_MMAP_RND_BITS
+const int mmap_rnd_bits_min = CONFIG_ARCH_MMAP_RND_BITS_MIN;
+const int mmap_rnd_bits_max = CONFIG_ARCH_MMAP_RND_BITS_MAX;
+int mmap_rnd_bits __read_mostly = CONFIG_ARCH_MMAP_RND_BITS;
+#endif
+#ifdef CONFIG_HAVE_ARCH_MMAP_RND_COMPAT_BITS
+const int mmap_rnd_compat_bits_min = CONFIG_ARCH_MMAP_RND_COMPAT_BITS_MIN;
+const int mmap_rnd_compat_bits_max = CONFIG_ARCH_MMAP_RND_COMPAT_BITS_MAX;
+int mmap_rnd_compat_bits __read_mostly = CONFIG_ARCH_MMAP_RND_COMPAT_BITS;
+#endif
+
+
 static void unmap_region(struct mm_struct *mm,
 		struct vm_area_struct *vma, struct vm_area_struct *prev,
 		unsigned long start, unsigned long end);
@@ -1277,28 +1289,8 @@ unsigned long do_mmap_pgoff(struct file *file, unsigned long addr,
 	*populate = 0;
 
 #ifdef CONFIG_MSM_APP_SETTINGS
-	if (file && file->f_path.dentry) {
-		const char *name = file->f_path.dentry->d_name.name;
-		char *libs[10] = {0};
-		unsigned int count;
-		bool found = false;
-		int i;
-
-		get_lib_names(libs, &count);
-		for (i = 0; i < count; i++) {
-			if (unlikely(!strcmp(name, libs[i]))) {
-				found = true;
-				break;
-			}
-		}
-		if (found) {
-			preempt_disable();
-			set_app_setting_bit(APP_SETTING_BIT);
-			/* This will take care of child processes as well */
-			current->mm->app_setting = 1;
-			preempt_enable();
-		}
-	}
+	if (use_app_setting)
+		apply_app_setting_bit(file);
 #endif
 
 	/*

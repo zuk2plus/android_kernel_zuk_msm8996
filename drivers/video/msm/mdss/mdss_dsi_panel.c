@@ -39,7 +39,6 @@
 #include "mdss_ams520.h"
 #include "mdss_otm1901a.h"
 #include "mdss_ft8716.h"
-#include "mdss_livedisplay.h"
 
 struct panel_effect_data lcd_data;
 
@@ -207,7 +206,7 @@ int mdss_dsi_panel_cmd_read(struct mdss_dsi_ctrl_pdata *ctrl, char cmd0,
 	return mdss_dsi_cmdlist_put(ctrl, &cmdreq);
 }
 
-void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
+static void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
 			struct dsi_panel_cmds *pcmds, u32 flags)
 {
 	struct dcs_cmd_req cmdreq;
@@ -952,11 +951,6 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 
 	if (ctrl->ds_registered && pinfo->is_pluggable)
 		mdss_dba_utils_video_on(pinfo->dba_data, pinfo);
-
-	if (pdata->event_handler)
-		pdata->event_handler(pdata, MDSS_EVENT_UPDATE_LIVEDISPLAY,
-				(void *)(unsigned long) MODE_UPDATE_ALL);
-
 end:
 	pr_debug("%s:-\n", __func__);
 	return ret;
@@ -1079,7 +1073,7 @@ static void mdss_dsi_parse_trigger(struct device_node *np, char *trigger,
 }
 
 
-int mdss_dsi_parse_dcs_cmds(struct device_node *np,
+static int mdss_dsi_parse_dcs_cmds(struct device_node *np,
 		struct dsi_panel_cmds *pcmds, char *cmd_key, char *link_key)
 {
 	const char *data;
@@ -1848,6 +1842,9 @@ static int mdss_dsi_parse_panel_features(struct device_node *np,
 	pinfo->panel_ack_disabled = pinfo->sim_panel_mode ?
 		1 : of_property_read_bool(np, "qcom,panel-ack-disabled");
 
+	pinfo->allow_phy_power_off = of_property_read_bool(np,
+		"qcom,panel-allow-phy-poweroff");
+
 	mdss_dsi_parse_esd_params(np, ctrl);
 
 	if (pinfo->panel_ack_disabled && pinfo->esd_check_enabled) {
@@ -2557,8 +2554,6 @@ static int mdss_panel_parse_dt(struct device_node *np,
 
 	pinfo->is_dba_panel = of_property_read_bool(np,
 			"qcom,dba-panel");
-
-	mdss_livedisplay_parse_dt(np, pinfo);
 
 	return 0;
 

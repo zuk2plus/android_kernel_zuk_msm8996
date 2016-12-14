@@ -3,7 +3,7 @@ qcom,Coslight_9k_2385871_lenovo_bl268drn_3500mah_averaged_masterslave_jun1st2016
 	/* #2385871_Lenovo_BL268DRN_3500mAh_averaged_MasterSlave_Jun1st2016*/
 	qcom,max-voltage-uv = <4400000>;
 	qcom,nom-batt-capacity-mah = <2700>;
-	qcom,batt-id-kohm = <10>;
+	qcom,batt-id-kohm = <9>;
 	qcom,battery-beta = <4250>;
 	qcom,battery-type = "Coslight_9k_2385871_lenovo_bl268drn_3500mah_averaged_masterslave";
 	qcom,chg-rslow-comp-c1 = <3357796>;
